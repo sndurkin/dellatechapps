@@ -1,0 +1,32 @@
+{
+  "name": "storymagic",
+  "version": "1.0.0",
+  "description": "storymagic is a tool that helps you create simple short stories to help children learn to read.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "build": "vite build --config vite.config.js",
+    "preview": "vite preview --config vite.config.js",
+    "dev": "vite build --config vite.config.js --watch"
+  },
+  "author": "Sean Durkin",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "fs-extra": "^11.2.0",
+    "openai": "^4.52.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "svelte": "^4.2.18"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^3.1.1",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.4",
+    "svelte": "^4.2.18",
+    "vite": "^5.4.1"
+  }
+}
