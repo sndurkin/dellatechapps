@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "rest_framework",
     "server.apps.storymagic",
+    "server.apps.kitchenbuddy",
 ]
 
 MIDDLEWARE = [

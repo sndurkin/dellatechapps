@@ -1,6 +1,6 @@
 import enum
 from django.db import models
-from django.db.models import Model, CharField, JSONField, DateTimeField
+from django.db.models import Model, CharField, JSONField, DateTimeField, IntegerField
 from django.utils.translation import gettext_lazy as _
 
 
@@ -24,5 +24,6 @@ class Story(Model):
 
     title = CharField(_('Title'), max_length=255)
     sentences = JSONField(_('Sentences'))
+    sentence_count = IntegerField(_('Sentence count'))
     topic = CharField(_('Topic'), max_length=1024)
     grade = CharField(_('Grade'), max_length=24, choices=Grade.choices)

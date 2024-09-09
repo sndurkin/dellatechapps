@@ -11,22 +11,25 @@
   async function handleCreateStory (event) {
     const { topic, grade, sentenceCount } = event.detail;
 
+    const csrfToken = getCookie('csrftoken');
+
     state = 'creating';
-    const resp = await fetch('/stories', {
+    const resp = await fetch('/storymagic/api/stories/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken,
       },
       body: JSON.stringify({
         topic,
         grade,
-        sentenceCount,
+        sentence_count: sentenceCount,
       }),
     });
 
     const data = await resp.json();
     story = data.story;
-    wordMappings = data.wordMappings || {};
+    wordMappings = data.word_mappings || {};
     state = 'reading-story';
   }
 
@@ -48,6 +51,22 @@
     state = 'reading-story';
     wordToHelpWith = null;
   }
+
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            // Check if this cookie string begins with the name we want
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
 </script>
 
 <main>
@@ -87,5 +106,6 @@ footer {
   color: #ccc;
   padding: 0.5em;
   text-align: center;
+  user-select: none;
 }
 </style>

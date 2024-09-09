@@ -1,0 +1,3 @@
+server/static/
+server/web/node_modules/
+server/web/package-lock.json

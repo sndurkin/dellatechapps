@@ -2,10 +2,20 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Install dependencies: libpq-dev, gcc, nodejs, npm
+RUN apt-get update && \
+    apt-get install -y libpq-dev gcc curl && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs
 
-RUN apt-get update && apt-get install -y libpq-dev gcc
+# Install server dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install web dependencies
+RUN mkdir -p /app/server/static/
+COPY server/web/package*.json server/web/
+RUN cd server/web && npm install
 
 COPY . .
 
@@ -13,4 +23,4 @@ RUN python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
-CMD ["gunicorn", "mysite.wsgi:application", "--bind", "0.0.0.0:8000"]
+CMD ["sh", "-c", "cd /app/server/web && npm install && npm run build && cd /app && gunicorn mysite.wsgi:application --bind 0.0.0.0:8000"]

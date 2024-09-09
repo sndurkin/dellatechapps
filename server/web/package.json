@@ -1,8 +1,7 @@
 {
-  "name": "storymagic",
+  "name": "dellatechapps",
   "version": "1.0.0",
-  "description": "storymagic is a tool that helps you create simple short stories to help children learn to read.",
-  "main": "index.js",
+  "description": "This is a collection of web-based tools created by Della Tech LLC.",
   "type": "module",
   "scripts": {
     "build": "vite build --config vite.config.js",

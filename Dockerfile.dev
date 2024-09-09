@@ -2,13 +2,25 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Install dependencies: libpq-dev, gcc, nodejs, npm
+RUN apt-get update && \
+    apt-get install -y libpq-dev gcc curl && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs
 
-RUN apt-get update && apt-get install -y libpq-dev gcc
+# Install server dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install web dependencies
+COPY server/web/package.json server/web/
+# Remove package-lock.json and node_modules if they exist (to avoid npm bugs) to address this issue:
+#   Error: Cannot find module @rollup/rollup-linux-x64-gnu. npm has a bug related to optional dependencies (https://github.com/npm/cli/issues/4828). Please try `npm i` again after removing both package-lock.json and node_modules directory.
+RUN rm -f /app/server/web/package-lock.json && rm -rf /app/server/web/node_modules
+RUN cd server/web && npm install
 
 COPY . .
 
 EXPOSE 8000
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["sh", "-c", "cd /app/server/web && npm install && npm run build && cd /app && python manage.py runserver 0.0.0.0:8000"]

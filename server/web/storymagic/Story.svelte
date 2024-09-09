@@ -47,7 +47,7 @@
   }
 
   function startPress(event) {
-    if (event.target.classList.contains('word')) {
+    if (event.target?.classList?.contains('word')) {
       timer = setTimeout(() => {
         dispatch('word-help', {
           word: massageWord(event.target.textContent),
@@ -57,7 +57,7 @@
   }
 
   function cancelPress(event) {
-    if (event.target.classList.contains('word')) {
+    if (event.target?.classList?.contains('word')) {
       clearTimeout(timer);
     }
   }

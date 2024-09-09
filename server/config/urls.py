@@ -16,9 +16,12 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from server.apps.storymagic import urls
+from server.apps.storymagic import urls as storymagic_urls
+from server.apps.kitchenbuddy import urls as kitchenbuddy_urls
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("storymagic/", include(urls)),
+
+    path("storymagic/", include(storymagic_urls)),
+    path("kitchenbuddy/", include(kitchenbuddy_urls)),
 ]

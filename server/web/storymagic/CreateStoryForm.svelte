@@ -9,7 +9,7 @@
   let sentenceCount;
 
   onMount(() => {
-    grade = localStorage.getItem("grade") || "preschool";
+    grade = localStorage.getItem("grade") || "Preschool";
     sentenceCount = localStorage.getItem("sentenceCount");
   });
 
@@ -33,13 +33,14 @@
 <div class="mb-3">
   <label for="grade" class="form-label">Grade level</label>
   <select bind:value={grade} id="grade" class="form-select" aria-label="Select grade level">
-    <option value="preschool">Preschool</option>
-    <option value="kindergarten">Kindergarten</option>
-    <option value="1st grade">1st grade</option>
-    <option value="2nd grade">2nd grade</option>
-    <option value="3rd grade">3rd grade</option>
-    <option value="4th grade">4th grade</option>
-    <option value="5th grade">5th grade</option>
+    <option value="Preschool">Preschool</option>
+    <option value="Kindergarten">Kindergarten</option>
+    <option value="1st Grade">1st Grade</option>
+    <option value="2nd Grade">2nd Grade</option>
+    <option value="3rd Grade">3rd Grade</option>
+    <option value="4th Grade">4th Grade</option>
+    <option value="5th Grade">5th Grade</option>
+    <option value="6th Grade">6th Grade</option>
   </select>
 </div>
 <div class="mb-3">
