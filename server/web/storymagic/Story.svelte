@@ -5,7 +5,11 @@
 
   const dispatch = createEventDispatcher();
 
-  let timer;
+  let wordHelpTimer;
+
+  let startOverTimer;
+  let startOverBtn;
+
   let storyEl;
 
   function massageWord(word) {
@@ -25,7 +29,7 @@
       currentWordEl.previousElementSibling.focus();
     }
     else {
-      currentWordEl?.parentElement?.previousElementSibling?.querySelector('.word')?.focus();
+      currentWordEl?.parentElement?.previousElementSibling?.querySelector('.word:last-child')?.focus();
     }
   }
 
@@ -48,18 +52,24 @@
 
   function startPress(event) {
     if (event.target?.classList?.contains('word')) {
-      timer = setTimeout(() => {
+      wordHelpTimer = setTimeout(() => {
         dispatch('word-help', {
           word: massageWord(event.target.textContent),
         });
       }, 500);
     }
+    else if (event.target?.classList?.contains('action-btn')) {
+      event.target.classList.add('active');
+      startOverTimer = setTimeout(() => {
+        dispatch('start-over');
+      }, 1000);
+    }
   }
 
   function cancelPress(event) {
-    if (event.target?.classList?.contains('word')) {
-      clearTimeout(timer);
-    }
+    clearTimeout(wordHelpTimer);
+    startOverBtn?.classList?.remove('active');
+    clearTimeout(startOverTimer);
   }
 
   function handleKeyDown(event) {
@@ -75,10 +85,6 @@
         handleOpenWordHelp();
         break;
     }
-  }
-
-  function handleStartOver() {
-    dispatch('start-over');
   }
 
   onMount(() => {
@@ -121,7 +127,7 @@
   {/each}
 </div>
 <div class="actions">
-  <button class="btn btn-light me-auto action-btn" on:click={handleStartOver}>⟳</button>
+  <button class="btn btn-light me-auto action-btn start-over-btn" bind:this={startOverBtn}>⟳</button>
   <button class="btn btn-light action-btn" on:click={handleOpenWordHelp}>?</button>
   <button class="btn btn-light action-btn" on:click={handlePrevious}>&lt;</button>
   <button class="btn btn-light action-btn" on:click={handleNext}>&gt;</button>
@@ -167,5 +173,23 @@
   font-family: 'Consolas', 'Roboto Mono', 'SF Mono', 'Menlo', 'Monaco', 'Courier New', 'Courier', 'monospace';
   font-size: 1.5em;
   opacity: 0.65;
+}
+.start-over-btn::before {
+  content: "";
+  position: absolute;
+  left: 1.5em;
+  width: 0;
+  height: 0;
+  border-radius: 0;
+  background: #2c2cff;
+  transform: translate(-50%, 0);
+  z-index: -1;
+  opacity: 0.65;
+  transition: border-radius 1s ease, width 1s ease, height 1s ease;
+}
+.start-over-btn:global(.active)::before {
+  width: 3em;
+  height: 3em;
+  border-radius: 3em;
 }
 </style>
