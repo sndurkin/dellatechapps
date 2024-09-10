@@ -31,16 +31,16 @@ jobs:
         username: ${{ secrets.DROPLET_USER }}
         key: ${{ secrets.DROPLET_SSH_KEY }}
         source: "docker-compose.prod.yml"
-        target: /var/www/dellatechapps
+        target: /var/www/dellatechapps/docker-compose.prod.yml
 
-    - name: ssh to droplet and build
+    - name: ssh to droplet and bring up the container
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.DROPLET_HOST }}
         username: ${{ secrets.DROPLET_USER }}
         key: ${{ secrets.DROPLET_SSH_KEY }}
         script: |
-          mkdir -p /var/www/dellatechapps
           cd /var/www/dellatechapps
+          docker login -u "${{ secrets.DOCKER_USERNAME }}" -p "${{ secrets.DOCKER_PASSWORD }}"
           docker-compose -f docker-compose.prod.yml pull
           docker-compose -f docker-compose.prod.yml up -d --build
