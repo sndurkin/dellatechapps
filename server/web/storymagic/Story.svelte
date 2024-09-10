@@ -6,11 +6,9 @@
   const dispatch = createEventDispatcher();
 
   let wordHelpTimer;
-
   let startOverTimer;
   let startOverBtn;
-
-  let storyEl;
+  let wakeLock;
 
   function massageWord(word) {
     return word.replace(/[^a-zA-Z]/g, '');
@@ -87,7 +85,7 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     document.querySelector('.word')?.focus();
 
     document.addEventListener('keydown', handleKeyDown);
@@ -101,22 +99,26 @@
     document.addEventListener('touchstart', startPress);
     document.addEventListener('touchend', cancelPress);
     document.addEventListener('touchcancel', cancelPress);
+
+    wakeLock = await navigator.wakeLock.request('screen');
   });
 
-  onDestroy(() => {
+  onDestroy(async () => {
+    wakeLock.release();
+
     document.removeEventListener('keydown', handleKeyDown);
 
     document.removeEventListener('mousedown', startPress);
     document.removeEventListener('mouseup', cancelPress);
     document.removeEventListener('mouseleave', cancelPress);
 
-    storyEl.removeEventListener('touchstart', startPress);
-    storyEl.removeEventListener('touchend', cancelPress);
-    storyEl.removeEventListener('touchcancel', cancelPress);
+    document.removeEventListener('touchstart', startPress);
+    document.removeEventListener('touchend', cancelPress);
+    document.removeEventListener('touchcancel', cancelPress);
   });
 </script>
 
-<div class="story" bind:this={storyEl}>
+<div class="story">
   <h3 class="mb-3">{story.title}</h3>
   {#each story.sentences as sentence}
     <p class="sentence fs-3 mt-4">
