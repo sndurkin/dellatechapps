@@ -21,8 +21,8 @@ jobs:
 
     - name: build and push docker image
       run: |
-        docker build -f Dockerfile.prod -t dellatechapps:latest .
-        docker push dellatechapps:latest
+        docker build -f Dockerfile.prod -t sndurkin/dellatechapps:latest .
+        docker push sndurkin/dellatechapps:latest
 
     - name: scp docker-compose.yml to droplet
       uses: appleboy/scp-action@v0.1.7
