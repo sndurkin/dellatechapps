@@ -32,7 +32,7 @@ jobs:
         key: ${{ secrets.DROPLET_SSH_KEY }}
         passphrase: ${{ secrets.DROPLET_SSH_PASSPHRASE }}
         source: "docker-compose.prod.yml"
-        target: /var/www/dellatechapps/docker-compose.yml
+        target: /var/www/dellatechapps/
 
     - name: scp nginx.conf to droplet
       uses: appleboy/scp-action@v0.1.7
@@ -42,7 +42,7 @@ jobs:
         key: ${{ secrets.DROPLET_SSH_KEY }}
         passphrase: ${{ secrets.DROPLET_SSH_PASSPHRASE }}
         source: "nginx.prod.conf"
-        target: /etc/nginx/nginx.conf
+        target: /etc/nginx/
 
     - name: ssh to droplet and bring up the container
       uses: appleboy/ssh-action@v1.0.3
@@ -53,6 +53,8 @@ jobs:
         passphrase: ${{ secrets.DROPLET_SSH_PASSPHRASE }}
         script: |
           cd /var/www/dellatechapps
+          mv /etc/nginx/nginx.prod.conf /etc/nginx/nginx.conf
+          mv ./docker-compose.prod.yml ./docker-compose.yml
           docker login -u "${{ secrets.DOCKER_USERNAME }}" -p "${{ secrets.DOCKER_PASSWORD }}"
           docker compose pull
           docker compose up
