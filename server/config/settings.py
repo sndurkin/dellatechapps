@@ -15,7 +15,7 @@ from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+APPS_DIR = BASE_DIR / "apps"
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -24,9 +24,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-5f!x!_i5x44e0&op8vpt!)@_*9iamfl6cni_e&4@65n=0eb_0k"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "False")
+DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1")
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['storymagic.app', 'www.storymagic.app', '127.0.0.1']
+if DEBUG:
+    ALLOWED_HOSTS.append('storymagic.local')
 
 # Apparently, this is needed for the Sites framework, which is used for multi-site support.
 SITE_ID = 1
@@ -39,8 +41,8 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
-    "django.contrib.staticfiles",
     "django.contrib.sites",
+    # "django.contrib.staticfiles",
     "rest_framework",
     "server.apps.storymagic",
     "server.apps.kitchenbuddy",
@@ -127,7 +129,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
+STATIC_ROOT = BASE_DIR / "static"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
