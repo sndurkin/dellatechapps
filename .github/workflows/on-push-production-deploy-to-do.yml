@@ -33,6 +33,7 @@ jobs:
         passphrase: ${{ secrets.DROPLET_SSH_PASSPHRASE }}
         source: "docker-compose.prod.yml"
         target: /var/www/dellatechapps/
+        timeout: 120s
 
     - name: scp nginx.conf to droplet
       uses: appleboy/scp-action@v0.1.7
@@ -43,6 +44,7 @@ jobs:
         passphrase: ${{ secrets.DROPLET_SSH_PASSPHRASE }}
         source: "nginx.prod.conf"
         target: /etc/nginx/
+        timeout: 120s
 
     - name: ssh to droplet and bring up the container
       uses: appleboy/ssh-action@v1.0.3
