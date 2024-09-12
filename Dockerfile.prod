@@ -19,8 +19,8 @@ RUN cd server/web && npm install
 
 COPY . .
 
-RUN python manage.py collectstatic --noinput
+# RUN python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "cd /app/server/web && npm install && npm run build && cd /app && gunicorn mysite.wsgi:application --bind 0.0.0.0:8000"]
+CMD ["sh", "-c", "cd /app/server/web && npm install && npm run build && cd /app && gunicorn server.config.wsgi:application --bind 0.0.0.0:8000 --access-logfile - --error-logfile -"]

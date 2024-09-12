@@ -16,7 +16,7 @@
     const { topic, grade, sentenceCount } = event.detail;
 
     state = 'creating';
-    const resp = await fetch('/storymagic/api/stories/', {
+    const resp = await fetch('/api/stories/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

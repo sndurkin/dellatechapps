@@ -1,18 +1,27 @@
 services:
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
+    image: sndurkin/dellatechapps:latest
     ports:
       - "8000:8000"
+    volumes:
+      - static_files:/app/server/static
+    networks:
+      - nginx-web
+      - web-db
     environment:
       - DEBUG=False
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://127.0.0.1:8000/health/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     depends_on:
       db:
         condition: service_healthy
@@ -25,11 +34,34 @@ services:
       - POSTGRES_PASSWORD=postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data/
+    networks:
+      - web-db
     healthcheck:
       test: [ "CMD", "pg_isready", "-d", "postgres", "-U", "postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  nginx:
+    image: nginx
+    volumes:
+      - /etc/nginx/:/etc/nginx/
+      - static_files:/var/www/dellatechapps/
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - nginx-web
+    depends_on:
+      web:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+  static_files:
+
+networks:
+  nginx-web:
+    driver: bridge
+  web-db:
+    driver: bridge
