@@ -17,6 +17,6 @@ footer {
   color: #ccc;
   padding: 0.5em;
   text-align: center;
-  user-select: none;
+  pointer-events: none;
 }
 </style>
