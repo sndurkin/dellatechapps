@@ -26,9 +26,14 @@ SECRET_KEY = "django-insecure-5f!x!_i5x44e0&op8vpt!)@_*9iamfl6cni_e&4@65n=0eb_0k
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1")
 
-ALLOWED_HOSTS = ['storymagic.app', 'www.storymagic.app', '127.0.0.1']
+ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "storymagic.app", "www.storymagic.app",
+    "kitchenbuddy.app", "www.kitchenbuddy.app",
+]
 if DEBUG:
-    ALLOWED_HOSTS.append('storymagic.local')
+    ALLOWED_HOSTS.append("storymagic.local")
+    ALLOWED_HOSTS.append("kitchenbuddy.local")
 
 # Apparently, this is needed for the Sites framework, which is used for multi-site support.
 SITE_ID = 1
