@@ -21,17 +21,28 @@ jobs:
 
     - name: build and push docker image
       run: |
-        docker build -f Dockerfile.prod -t ${{ secrets.DOCKER_USERNAME }}/${{ secrets.APPNAME }}:latest .
-        docker push ${{ secrets.DOCKER_USERNAME }}/${{ secrets.APPNAME }}:latest
+        docker build -f Dockerfile.prod -t dellatechapps:latest .
+        docker push dellatechapps:latest
 
-    - name: scp file to droplet
+    - name: scp docker-compose.yml to droplet
       uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.DROPLET_HOST }}
         username: ${{ secrets.DROPLET_USER }}
         key: ${{ secrets.DROPLET_SSH_KEY }}
+        passphrase: ${{ secrets.DROPLET_SSH_PASSPHRASE }}
         source: "docker-compose.prod.yml"
-        target: /var/www/dellatechapps/docker-compose.prod.yml
+        target: /var/www/dellatechapps/docker-compose.yml
+
+    - name: scp nginx.conf to droplet
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.DROPLET_HOST }}
+        username: ${{ secrets.DROPLET_USER }}
+        key: ${{ secrets.DROPLET_SSH_KEY }}
+        passphrase: ${{ secrets.DROPLET_SSH_PASSPHRASE }}
+        source: "nginx.prod.conf"
+        target: /etc/nginx/nginx.conf
 
     - name: ssh to droplet and bring up the container
       uses: appleboy/ssh-action@v1.0.3
@@ -39,8 +50,9 @@ jobs:
         host: ${{ secrets.DROPLET_HOST }}
         username: ${{ secrets.DROPLET_USER }}
         key: ${{ secrets.DROPLET_SSH_KEY }}
+        passphrase: ${{ secrets.DROPLET_SSH_PASSPHRASE }}
         script: |
           cd /var/www/dellatechapps
           docker login -u "${{ secrets.DOCKER_USERNAME }}" -p "${{ secrets.DOCKER_PASSWORD }}"
-          docker-compose -f docker-compose.prod.yml pull
-          docker-compose -f docker-compose.prod.yml up -d --build
+          docker compose pull
+          docker compose up
