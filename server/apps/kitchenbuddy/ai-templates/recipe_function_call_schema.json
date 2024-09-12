@@ -1,0 +1,52 @@
+{
+  "name": "provide_recipe",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "The title of the recipe."
+      },
+      "summary": {
+        "type": "string",
+        "description": "A high level walkthrough of the steps, used to provide an idea of what is involved in making the recipe. It should be a maximum of 3 sentences. For example: 'This recipe involves chopping vegetables with a knife, cooking pasta in a pot, and making a tomato-based sauce in a skillet. The pasta is combined with the sauce along with some of the pasta water and the dish should be served immediately."
+      },
+      "ingredients": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "description": "A collection of ingredients in this recipe that are all located in the same place in the kitchen.",
+          "properties": {
+            "location": {
+              "type": "string",
+              "enum": ["Pantry", "Cabinet", "Refrigerator", "Freezer", "Counter"],
+              "description": "The location in which this collection of ingredients is located."
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "The name and amount of the ingredient."
+              }
+            }
+          }
+        }
+      },
+      "cookware": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "description": "Pans, pots, utensils, and anything else needed for the recipe"
+        }
+      },
+      "steps": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "description": "An individual step within the recipe"
+        }
+      }
+    }
+  },
+  "required": ["title", "ingredients", "cookware", "steps"]
+}

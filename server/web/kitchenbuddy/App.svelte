@@ -4,11 +4,40 @@
 
   // let recipeUrl = '';
   let recipeUrl = 'https://www.preciouscore.com/wprm_print/garlic-butter-chicken-pasta';
+  let error = '';
   let state = 'initial';
 
-  function handleFetchRecipe() {
+  async function handleFetchRecipe() {
     state = 'fetching';
-    console.log('fetching recipe');
+    error = '';
+
+    const response = await fetch('/api/recipes/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': utils.getCsrfToken(),
+      },
+      body: JSON.stringify({ url: recipeUrl }),
+    });
+
+    if (!response.ok) {
+      try {
+        const data = await response.json();
+        if (data.error) {
+          error = `Failed to fetch recipe: ${data.error}`;
+        }
+      } catch (e) { /* ignore */ }
+
+      if (!error) {
+        error = `Failed to fetch recipe: ${response.status} ${response.statusText} ${await response.text()}`;
+      }
+
+      state = 'initial';
+      return;
+    }
+
+    const data = await response.json();
+    console.log(data);
   }
 </script>
 
@@ -33,6 +62,11 @@
         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
       {/if}
     </button>
+    {#if error}
+      <div class="alert alert-danger mt-3" role="alert">
+        {error}
+      </div>
+    {/if}
   </div>
 </Frame>
 
