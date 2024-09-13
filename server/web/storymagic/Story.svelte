@@ -56,7 +56,7 @@
         });
       }, 500);
     }
-    else if (event.target?.classList?.contains('action-btn')) {
+    else if (event.target?.classList?.contains('start-over-btn')) {
       event.target.classList.add('active');
       startOverTimer = setTimeout(() => {
         dispatch('start-over');
