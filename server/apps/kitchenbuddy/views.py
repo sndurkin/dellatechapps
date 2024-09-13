@@ -39,6 +39,14 @@ def create_recipe(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     url = serializer.validated_data['url']
+
+    # Check if the recipe is already in the database
+    recipe = Recipe.objects.filter(url=url).first()
+    if recipe:
+        return Response({
+            "recipe": RecipeSerializer(recipe).data,
+        }, status=status.HTTP_200_OK)
+
     response = client.get(url)
     try:
         response.raise_for_status()
@@ -103,7 +111,6 @@ def create_recipe(request):
                 )
 
                 return Response({
-                    "message": completion['choices'][0]['message']['content'],
                     "recipe": serializer.data,
                 }, status=status.HTTP_201_CREATED)
     except Exception as e:

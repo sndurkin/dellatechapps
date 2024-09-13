@@ -1,9 +1,11 @@
 <script>
+  import Recipe from './Recipe.svelte';
   import Frame from '../Frame.svelte';
   import * as utils from '../utils';
 
   // let recipeUrl = '';
   let recipeUrl = 'https://www.preciouscore.com/wprm_print/garlic-butter-chicken-pasta';
+  let recipe = null;
   let error = '';
   let state = 'initial';
 
@@ -20,6 +22,7 @@
       body: JSON.stringify({ url: recipeUrl }),
     });
 
+    state = 'initial';
     if (!response.ok) {
       try {
         const data = await response.json();
@@ -32,19 +35,25 @@
         error = `Failed to fetch recipe: ${response.status} ${response.statusText} ${await response.text()}`;
       }
 
-      state = 'initial';
       return;
     }
 
     const data = await response.json();
-    console.log(data);
+    recipe = data.recipe.parsed_recipe;
+    state = 'recipe';
+  }
+
+  function handleStartOver() {
+    state = 'initial';
+    recipe = null;
   }
 </script>
 
 <Frame>
   <div class="col-md-6">
-    <label for="recipe-url" class="form-label">Recipe URL</label>
-    <div class="input-group mb-3">
+    {#if state === 'initial' || state === 'fetching'}
+      <label for="recipe-url" class="form-label">Recipe URL</label>
+      <div class="input-group mb-3">
       <input
         id="recipe-url"
         type="text"
@@ -66,6 +75,12 @@
       <div class="alert alert-danger mt-3" role="alert">
         {error}
       </div>
+    {/if}
+    {:else if state === 'recipe'}
+      <Recipe
+        recipe={recipe}
+        on:start-over={handleStartOver}
+      />
     {/if}
   </div>
 </Frame>
