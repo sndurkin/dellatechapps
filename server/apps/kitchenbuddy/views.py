@@ -8,8 +8,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework import status
 
-from .serializers import RecipeSerializer
-from .models import Recipe
+from .serializers import RecipeSerializer, GroceryListSerializer
+from .models import User, Recipe, GroceryList
 
 
 OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
@@ -33,15 +33,23 @@ def recipe_view(request):
     elif request.method == 'GET':
         return get_recipes(request)
 
+@api_view(['GET', 'POST'])
+def grocery_list_view(request):
+    if request.method == 'POST':
+        return add_to_grocery_list(request)
+    elif request.method == 'GET':
+        return get_grocery_list(request)
+
 def create_recipe(request):
     serializer = RecipeSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     url = serializer.validated_data['url']
+    user, _ = User.objects.get_or_create(username=request.data['username'])
 
     # Check if the recipe is already in the database
-    recipe = Recipe.objects.filter(url=url).first()
+    recipe = Recipe.objects.filter(url=url, user=user).first()
     if recipe:
         return Response({
             "recipe": RecipeSerializer(recipe).data,
@@ -107,6 +115,7 @@ def create_recipe(request):
                     title=arguments['title'],
                     url=url,
                     content=recipe_content,
+                    user=user,
                     parsed_recipe=arguments,
                 )
 
@@ -123,6 +132,23 @@ def create_recipe(request):
     }, status=status.HTTP_400_BAD_REQUEST)
 
 def get_recipes(request):
-    recipes = Recipe.objects.all()
+    recipes = Recipe.objects.filter(user__username=request.GET.get('username')).order_by('-created_at')
     serializer = RecipeSerializer(recipes, many=True)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response({
+        "recipes": serializer.data,
+    }, status=status.HTTP_200_OK)
+
+def get_grocery_list(request):
+    grocery_list = GroceryList.objects.filter(user__username=request.GET.get('username')).order_by('-created_at')
+    serializer = GroceryListSerializer(grocery_list, many=True)
+    return Response({
+        "items": serializer.data.items,
+    }, status=status.HTTP_200_OK)
+
+def add_to_grocery_list(request):
+    serializer = GroceryListSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer.save()
+    return Response({}, status=status.HTTP_201_CREATED)
