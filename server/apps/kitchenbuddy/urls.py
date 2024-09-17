@@ -8,7 +8,7 @@ from django.views.static import serve
 from .views import recipe_view, grocery_list_view
 
 
-def home_view(request, unique_id):
+def home_view(request, unique_id = None):
     index_file_path = os.path.join(settings.BASE_DIR, 'static/kitchenbuddy/index.html')
     with open(index_file_path, 'r') as f:
         return HttpResponse(f.read(), content_type='text/html')
@@ -21,4 +21,6 @@ urlpatterns = [
 
     path('<str:unique_id>/', home_view),  # Serves the same page as /
     path('<str:unique_id>/list/', home_view),  # Serves the same page as /
+    path('<str:unique_id>/new/', home_view),  # Serves the same page as /
+    path('<str:unique_id>/recipe/', home_view),  # Serves the same page as /
 ]

@@ -1,94 +1,32 @@
 <script>
-  import Recipe from './Recipe.svelte';
+  import { onMount } from 'svelte';
+
+  import Home from './Home.svelte';
+  import CreateUsernameForm from './CreateUsernameForm.svelte';
+
   import Frame from '../Frame.svelte';
-  import * as utils from '../utils';
+  import * as recipeUtils from './recipeUtils';
 
-  // let recipeUrl = '';
-  let recipeUrl = 'https://www.preciouscore.com/wprm_print/garlic-butter-chicken-pasta';
-  let recipe = null;
-  let error = '';
-  let state = 'initial';
+  const paths = window.location.pathname.split('/');
+  const state = paths.filter(p => p).length === 0 ? 'select-username' : 'home';
 
-  async function handleFetchRecipe() {
-    state = 'fetching';
-    error = '';
-
-    const response = await fetch('/api/recipes/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': utils.getCsrfToken(),
-      },
-      body: JSON.stringify({ url: recipeUrl }),
-    });
-
-    state = 'initial';
-    if (!response.ok) {
-      try {
-        const data = await response.json();
-        if (data.error) {
-          error = `Failed to fetch recipe: ${data.error}`;
-        }
-      } catch (e) { /* ignore */ }
-
-      if (!error) {
-        error = `Failed to fetch recipe: ${response.status} ${response.statusText} ${await response.text()}`;
-      }
-
-      return;
+  onMount(() => {
+    if (state === 'home') {
+      document.title = `${recipeUtils.getUsername()} - Kitchen Buddy`;
     }
-
-    const data = await response.json();
-    recipe = data.recipe.parsed_recipe;
-    state = 'recipe';
-  }
-
-  function handleStartOver() {
-    state = 'initial';
-    recipe = null;
-  }
+  });
 </script>
 
 <Frame>
-  <div class="col-md-6">
-    {#if state === 'initial' || state === 'fetching'}
-      <label for="recipe-url" class="form-label">Recipe URL</label>
-      <div class="input-group mb-3">
-      <input
-        id="recipe-url"
-        type="text"
-        bind:value={recipeUrl}
-        class="form-control"
-        placeholder="e.g. https://www.preciouscore.com/wprm_print/garlic-butter-chicken-pasta"
-        on:keyup={utils.onEnter(handleFetchRecipe)}
-      >
-    </div>
-    <button class="btn btn-primary fetch-btn" type="button" title="Fetch recipe" on:click={handleFetchRecipe}>
-      Fetch recipe
-      {#if state !== 'fetching'}
-        <i class="bi bi-arrow-right"></i>
-      {:else}
-        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-      {/if}
-    </button>
-    {#if error}
-      <div class="alert alert-danger mt-3" role="alert">
-        {error}
-      </div>
-    {/if}
-    {:else if state === 'recipe'}
-      <Recipe
-        recipe={recipe}
-        on:start-over={handleStartOver}
-      />
+  <div class="col-lg-8 col-md-10 col-sm-12">
+    {#if state === 'select-username'}
+      <CreateUsernameForm />
+    {:else}
+      <Home />
     {/if}
   </div>
 </Frame>
 
 <style>
-.fetch-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.75em;
-}
+
 </style>

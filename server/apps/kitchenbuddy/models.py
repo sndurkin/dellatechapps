@@ -27,8 +27,5 @@ class GroceryList(Model):
     created_at = DateTimeField(auto_now_add=True)
     updated_at = DateTimeField(auto_now=True)
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='grocery_lists')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='grocery_lists', unique=True)
     items = JSONField(_('Items'))
-
-    class Meta:
-        unique_together = [('user',)]

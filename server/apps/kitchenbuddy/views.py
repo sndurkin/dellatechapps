@@ -41,12 +41,18 @@ def grocery_list_view(request):
         return get_grocery_list(request)
 
 def create_recipe(request):
+    username = request.data.pop('username', None)
+    if not username:
+        return Response({
+            "error": "username is a required field",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
     serializer = RecipeSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     url = serializer.validated_data['url']
-    user, _ = User.objects.get_or_create(username=request.data['username'])
+    user, _ = User.objects.get_or_create(username=username)
 
     # Check if the recipe is already in the database
     recipe = Recipe.objects.filter(url=url, user=user).first()
@@ -140,15 +146,28 @@ def get_recipes(request):
 
 def get_grocery_list(request):
     grocery_list = GroceryList.objects.filter(user__username=request.GET.get('username')).order_by('-created_at')
-    serializer = GroceryListSerializer(grocery_list, many=True)
+    if not grocery_list.exists():
+        return Response({
+            "items": [],
+        }, status=status.HTTP_200_OK)
+
+    serializer = GroceryListSerializer(grocery_list.first(), many=False)
     return Response({
-        "items": serializer.data.items,
+        "items": serializer.data['items'],
     }, status=status.HTTP_200_OK)
 
 def add_to_grocery_list(request):
+    username = request.data.pop('username', None)
+    if not username:
+        return Response({
+            "error": "username is a required field",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
     serializer = GroceryListSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    serializer.save()
+    user, _ = User.objects.get_or_create(username=username)
+    serializer.save(user=user)
     return Response({}, status=status.HTTP_201_CREATED)
+
