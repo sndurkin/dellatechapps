@@ -5,8 +5,9 @@
   import AddRecipePage from './AddRecipePage.svelte';
   import RecipeDetailPage from './RecipeDetailPage.svelte';
   import GroceryListPage from './GroceryListPage.svelte';
-
   import * as recipeUtils from './recipeUtils';
+
+  import DeleteButton from '../DeleteButton.svelte';
 
 
   const pages = {
@@ -40,6 +41,7 @@
   const username = recipeUtils.getUsername();
   let activePage = 'home';
   let activePageData = {};
+  let groceryListPage;
 
   function navigateTo(page, pageData) {
     const newPath = `/${username}${pages[page].path}`;
@@ -68,6 +70,10 @@
     navigateTo('new-recipe');
   }
 
+  function handleDeleteList() {
+    groceryListPage.deleteList();
+  }
+
   onMount(() => {
     setPageFromPath();
     window.addEventListener('popstate', setPageFromPath);
@@ -93,6 +99,13 @@
     <a class="grocery-list-link ms-auto" href="javascript:;" on:click={() => navigateTo('grocery-list')}>
       {pages['grocery-list'].title}
     </a>
+  {:else}
+    <span class="ms-auto">
+      <DeleteButton
+        text="Delete all"
+        on:delete={handleDeleteList}
+      />
+    </span>
   {/if}
 </nav>
 <div class="tab-content mt-3">
@@ -110,7 +123,7 @@
     <RecipeDetailPage {...activePageData} />
   </div>
   <div class={`tab-pane ${activePage === 'grocery-list' ? 'show active' : ''}`}>
-    <GroceryListPage  {...activePageData} />
+    <GroceryListPage bind:this={groceryListPage} {...activePageData} />
   </div>
 </div>
 
