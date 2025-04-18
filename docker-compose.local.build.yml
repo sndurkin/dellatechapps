@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile.local.build
     ports:
       - "8000:8000"
+    volumes:
+      - static_files:/app/server/static/
     networks:
       - nginx-web
       - web-db

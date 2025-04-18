@@ -4,7 +4,7 @@
   "description": "This is a collection of web-based tools created by Della Tech LLC.",
   "type": "module",
   "scripts": {
-    "build": "vite build --config vite.config.js",
+    "build": "vite build --config vite.config.js --emptyOutDir",
     "preview": "vite preview --config vite.config.js",
     "dev": "vite --config vite.config.js",
     "dev:watch": "vite build --config vite.config.js --watch"

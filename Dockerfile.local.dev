@@ -22,4 +22,4 @@ RUN cd server/web && npm install
 EXPOSE 8000 5173
 
 # Use a script to run both the Python server and Vite dev server with hot reloading
-CMD ["sh", "-c", "cd /app/server/web && npm install && npm run dev & cd /app && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]
+CMD ["sh", "-c", "cd /app/server/web && npm run dev & cd /app && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]
