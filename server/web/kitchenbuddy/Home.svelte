@@ -5,6 +5,7 @@
   import AddRecipePage from './AddRecipePage.svelte';
   import RecipeDetailPage from './RecipeDetailPage.svelte';
   import GroceryListPage from './GroceryListPage.svelte';
+  import AllSortedGroceryItemsPage from './AllSortedGroceryItemsPage.svelte';
   import * as recipeUtils from './recipeUtils';
 
   import DeleteButton from '../DeleteButton.svelte';
@@ -18,6 +19,10 @@
     'grocery-list': {
       path: '/list/',
       title: 'Grocery list',
+    },
+    'grocery-list-all': {
+      path: '/list-all/',
+      title: 'All grocery items',
     },
     'recipe': {
       path: '/recipe/',
@@ -42,9 +47,10 @@
   let activePage = 'home';
   let activePageData = {};
   let groceryListPage;
+  let groceryListAllPage;
 
   function navigateTo(page, pageData) {
-    const newPath = `/${username}${pages[page].path}`;
+    const newPath = `/u/${username}${pages[page].path}`;
     if (window.location.pathname !== newPath) {
       window.history.pushState({}, '', newPath);
       setPageFromPath(pageData);
@@ -57,7 +63,7 @@
 
   function setPageFromPath(pageData = {}) {
     const paths = window.location.pathname.split('/');
-    activePage = pagesByPath[`/${paths?.[2]}/`] || 'home';
+    activePage = pagesByPath[`/${paths?.[3]}/`] || 'home';
     activePageData = pageData;
     console.log('setPageFromPath: ', activePage, activePageData);
   }
@@ -68,10 +74,6 @@
 
   function handleNewRecipe() {
     navigateTo('new-recipe');
-  }
-
-  function handleDeleteList() {
-    groceryListPage.deleteList();
   }
 
   onMount(() => {
@@ -100,12 +102,9 @@
       {pages['grocery-list'].title}
     </a>
   {:else}
-    <span class="ms-auto">
-      <DeleteButton
-        text="Delete all"
-        on:delete={handleDeleteList}
-      />
-    </span>
+    <a class="grocery-list-link ms-auto" href="javascript:;" on:click={() => navigateTo('grocery-list-all')}>
+      {pages['grocery-list-all'].title}
+    </a>
   {/if}
 </nav>
 <div class="tab-content mt-3">
@@ -123,7 +122,10 @@
     <RecipeDetailPage {...activePageData} />
   </div>
   <div class={`tab-pane ${activePage === 'grocery-list' ? 'show active' : ''}`}>
-    <GroceryListPage bind:this={groceryListPage} {...activePageData} />
+    <GroceryListPage bind:this={groceryListPage} active={activePage === 'grocery-list'} {...activePageData} />
+  </div>
+  <div class={`tab-pane ${activePage === 'grocery-list-all' ? 'show active' : ''}`}>
+    <AllSortedGroceryItemsPage bind:this={groceryListAllPage} active={activePage === 'grocery-list-all'} {...activePageData} />
   </div>
 </div>
 

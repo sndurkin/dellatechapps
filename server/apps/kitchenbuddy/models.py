@@ -27,5 +27,6 @@ class GroceryList(Model):
     created_at = DateTimeField(auto_now_add=True)
     updated_at = DateTimeField(auto_now=True)
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='grocery_lists', unique=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='grocery_lists')
     items = JSONField(_('Items'))
+    all_items_sorted = JSONField(_('All Items Sorted'), default=list)

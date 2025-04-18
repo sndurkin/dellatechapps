@@ -2,11 +2,13 @@ services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile.local.dev
     ports:
       - "8000:8000"
+      - "5173:5173"  # Expose Vite dev server port
     volumes:
       - .:/app  # Mount the current directory to enable live reloading
+      - /app/server/web/node_modules  # Prevent overwriting node_modules
     networks:
       - nginx-web
       - web-db
@@ -17,6 +19,8 @@ services:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+      - CHOKIDAR_USEPOLLING=true  # Enable polling for file changes
+      - WATCHPACK_POLLING=true    # Enable polling for webpack
     env_file:
       - .env
     healthcheck:
@@ -47,8 +51,8 @@ services:
   nginx:
     image: nginx
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ./server/static:/var/www/dellatechapps/
+      - ./nginx.local.dev.conf:/etc/nginx/nginx.conf
+      - static_files:/var/www/dellatechapps/
     ports:
       - "80:80"
       - "443:443"
@@ -57,6 +61,7 @@ services:
     depends_on:
       web:
         condition: service_healthy
+
 
 volumes:
   postgres_data:

@@ -1,6 +1,7 @@
 import httpx
 import json
 import os
+from difflib import SequenceMatcher
 
 from django.conf import settings
 from django.template import Template, Context
@@ -156,6 +157,37 @@ def get_grocery_list(request):
         "items": serializer.data['items'],
     }, status=status.HTTP_200_OK)
 
+def sort_grocery_items(items, all_items_sorted):
+    # Create a map of item to its position
+    item_positions = {}
+
+    # Try exact matches first
+    for item in items:
+        try:
+            item_positions[item] = all_items_sorted.index(item)
+        except ValueError:
+            item_positions[item] = -1
+
+    # For items without exact matches, find best matches using SequenceMatcher
+    for item in [i for i, pos in item_positions.items() if pos == -1]:
+        best_ratio = 0
+        best_position = -1
+
+        for idx, reference in enumerate(all_items_sorted):
+            # Compare strings case-insensitively
+            matcher = SequenceMatcher(None, item.lower(), reference.lower())
+            ratio = matcher.ratio()
+
+            # Only consider matches with ratio > 0.8 (very similar strings)
+            if ratio > 0.8 and ratio > best_ratio:
+                best_ratio = ratio
+                best_position = idx
+
+        item_positions[item] = best_position
+
+    # Sort items based on their positions
+    return sorted(items, key=lambda x: item_positions[x])
+
 def add_to_grocery_list(request):
     username = request.data.pop('username', None)
     if not username:
@@ -168,6 +200,105 @@ def add_to_grocery_list(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     user, _ = User.objects.get_or_create(username=username)
-    serializer.save(user=user)
-    return Response({}, status=status.HTTP_201_CREATED)
+
+    # Get or create grocery list
+    grocery_list = GroceryList.objects.filter(user=user).first()
+    if grocery_list:
+        # Update existing list
+        new_items = serializer.validated_data['items']
+
+        # Add new items to the beginning of all_items_sorted if they don't exist
+        all_items_sorted = grocery_list.all_items_sorted
+        for item in new_items:
+            if item not in all_items_sorted:
+                all_items_sorted.insert(0, item)
+
+        # Sort the new items based on all_items_sorted
+        sorted_items = sort_grocery_items(new_items, all_items_sorted)
+
+        # Update both items and all_items_sorted
+        grocery_list.items = sorted_items
+        grocery_list.all_items_sorted = all_items_sorted
+        grocery_list.save()
+    else:
+        # Create new list - for new lists, items and all_items_sorted are the same
+        grocery_list = serializer.save(
+            user=user,
+            all_items_sorted=serializer.validated_data['items'],
+            items=serializer.validated_data['items']
+        )
+
+    return Response({
+        "items": grocery_list.items,
+        "all_items_sorted": grocery_list.all_items_sorted
+    }, status=status.HTTP_201_CREATED)
+
+@api_view(['GET', 'POST'])
+def manage_all_items_sorted(request):
+    username = request.GET.get('username') if request.method == 'GET' else request.data.get('username')
+    if not username:
+        return Response({
+            "error": "username is a required field",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    grocery_list = GroceryList.objects.filter(user__username=username).first()
+    if not grocery_list:
+        return Response({
+            "all_items_sorted": [],
+        }, status=status.HTTP_200_OK)
+
+    if request.method == 'GET':
+        return Response({
+            "all_items_sorted": grocery_list.all_items_sorted,
+        }, status=status.HTTP_200_OK)
+
+    action = request.data.get('action')
+    if action not in ['remove', 'move', 'replace']:
+        return Response({
+            "error": "Invalid action. Must be one of: remove, move, replace",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    all_items_sorted = grocery_list.all_items_sorted
+
+    if action == 'remove':
+        items = request.data.get('items', [])
+        if not isinstance(items, list):
+            items = [items]
+        all_items_sorted = [item for item in all_items_sorted if item not in items]
+
+    elif action == 'move':
+        item = request.data.get('item')
+        new_position = request.data.get('new_position')
+        if item is None or new_position is None:
+            return Response({
+                "error": "Both item and new_position are required for move action",
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            current_position = all_items_sorted.index(item)
+            all_items_sorted.pop(current_position)
+            all_items_sorted.insert(new_position, item)
+        except ValueError:
+            return Response({
+                "error": f"Item '{item}' not found in all_items_sorted",
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except IndexError:
+            return Response({
+                "error": f"Invalid new_position: {new_position}",
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    elif action == 'replace':
+        new_items = request.data.get('items', [])
+        if not isinstance(new_items, list):
+            return Response({
+                "error": "items must be a list for replace action",
+            }, status=status.HTTP_400_BAD_REQUEST)
+        all_items_sorted = new_items
+
+    grocery_list.all_items_sorted = all_items_sorted
+    grocery_list.save()
+
+    return Response({
+        "all_items_sorted": all_items_sorted,
+    }, status=status.HTTP_200_OK)
 

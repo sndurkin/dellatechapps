@@ -1,5 +1,9 @@
 function getUsername() {
-  return window.location.pathname.split('/')[1];
+  const parts = window.location.pathname.split('/');
+  if (parts[1] === 'u' && parts.length > 2) {
+    return parts[2];
+  }
+  return null;
 }
 
 export {

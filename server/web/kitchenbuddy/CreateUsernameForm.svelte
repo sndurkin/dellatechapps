@@ -9,7 +9,7 @@
   }
 
   function handleSelectUsername() {
-    window.location.href = `/${username}/`;
+    window.location.href = `/u/${username}/`;
   }
 </script>
 

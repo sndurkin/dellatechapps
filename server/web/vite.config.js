@@ -7,6 +7,7 @@ export default defineConfig({
   base: '/static/',
   build: {
     outDir: '../static/',
+    assetsDir: 'assets',
     rollupOptions: {
       input: {
         storymagic: './storymagic/index.html',
@@ -16,8 +17,17 @@ export default defineConfig({
   },
   server: {
     watch: {
-      usePolling: true,
+      usePolling: false,
     },
+    host: true,
+    strictPort: true,
+    port: 5173,
+    hmr: false
   },
-  plugins: [svelte()],
+  plugins: [svelte({
+    emitCss: true,
+    compilerOptions: {
+      css: true
+    }
+  })],
 })
