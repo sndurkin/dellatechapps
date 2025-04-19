@@ -229,10 +229,6 @@ def add_to_grocery_list(request):
         # Remove duplicates from new items
         new_items = list(dict.fromkeys(new_items))
 
-        # Filter out items that already exist in the list
-        existing_items = set(grocery_list.items)
-        new_items = [item for item in new_items if item not in existing_items]
-
         if not new_items:
             return Response({
                 "items": grocery_list.items,
