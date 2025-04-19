@@ -152,9 +152,15 @@ def get_grocery_list(request):
             "items": [],
         }, status=status.HTTP_200_OK)
 
-    serializer = GroceryListSerializer(grocery_list.first(), many=False)
+    grocery_list = grocery_list.first()
+    serializer = GroceryListSerializer(grocery_list, many=False)
+    items = serializer.data['items']
+
+    # Sort the items using the reference list
+    sorted_items = sort_grocery_items(items, grocery_list.all_items_sorted)
+
     return Response({
-        "items": serializer.data['items'],
+        "items": sorted_items,
     }, status=status.HTTP_200_OK)
 
 def sort_grocery_items(items, all_items_sorted):
@@ -195,6 +201,9 @@ def add_to_grocery_list(request):
             "error": "username is a required field",
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    # Convert all items to lowercase before validation
+    request.data['items'] = [item.lower() for item in request.data.get('items', [])]
+
     serializer = GroceryListSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -204,10 +213,33 @@ def add_to_grocery_list(request):
     # Get or create grocery list
     grocery_list = GroceryList.objects.filter(user=user).first()
     if grocery_list:
+        # If empty list is provided, clear the grocery list
+        if not serializer.validated_data['items']:
+            grocery_list.items = []
+            grocery_list.all_items_sorted = []
+            grocery_list.save()
+            return Response({
+                "items": [],
+                "all_items_sorted": []
+            }, status=status.HTTP_200_OK)
+
         # Update existing list
         new_items = serializer.validated_data['items']
 
-        # Add new items to the beginning of all_items_sorted if they don't exist
+        # Remove duplicates from new items
+        new_items = list(dict.fromkeys(new_items))
+
+        # Filter out items that already exist in the list
+        existing_items = set(grocery_list.items)
+        new_items = [item for item in new_items if item not in existing_items]
+
+        if not new_items:
+            return Response({
+                "items": grocery_list.items,
+                "all_items_sorted": grocery_list.all_items_sorted
+            }, status=status.HTTP_200_OK)
+
+        # Add new items to the beginning of all_items_sorted
         all_items_sorted = grocery_list.all_items_sorted
         for item in new_items:
             if item not in all_items_sorted:
@@ -222,10 +254,12 @@ def add_to_grocery_list(request):
         grocery_list.save()
     else:
         # Create new list - for new lists, items and all_items_sorted are the same
+        # Remove duplicates from initial items
+        unique_items = list(dict.fromkeys(serializer.validated_data['items']))
         grocery_list = serializer.save(
             user=user,
-            all_items_sorted=serializer.validated_data['items'],
-            items=serializer.validated_data['items']
+            all_items_sorted=unique_items,
+            items=unique_items
         )
 
     return Response({

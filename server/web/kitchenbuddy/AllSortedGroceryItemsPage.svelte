@@ -13,6 +13,7 @@
   let editingValue = '';
   let touchStartY = 0;
   let touchTarget = null;
+  let targetIndex = -1; // Track where the dragged item will be inserted
 
   $: if (active) {
     loadItems();
@@ -52,20 +53,46 @@
     draggedItem = item;
   }
 
+  function calculateTargetIndex(e, targetItem) {
+    if (!e.currentTarget || !targetItem || items.length === 0) {
+      return -1;
+    }
+
+    const targetElement = e.currentTarget;
+    const rect = targetElement.getBoundingClientRect();
+    const baseIndex = items.indexOf(targetItem);
+
+    // If item not found, return -1
+    if (baseIndex === -1) {
+      return -1;
+    }
+
+    // Ensure clientY exists (for mouse events)
+    if (typeof e.clientY !== 'number') {
+      return baseIndex;
+    }
+
+    const relativeY = e.clientY - rect.top;
+    const isBottomHalf = relativeY > rect.height / 2;
+    return isBottomHalf ? baseIndex + 1 : baseIndex;
+  }
+
   function handleDragOver(e, targetItem) {
     e.preventDefault();
     if (!draggedItem || draggedItem === targetItem) return;
 
-    const targetIndex = items.indexOf(targetItem);
-    const draggedIndex = items.indexOf(draggedItem);
-
-    if (targetIndex !== draggedIndex) {
-      updateItems('move', { item: draggedItem, new_position: targetIndex });
-    }
+    targetIndex = calculateTargetIndex(e, targetItem);
   }
 
-  function handleDragEnd() {
+  async function handleDragEnd() {
+    if (draggedItem) {
+      const currentIndex = items.indexOf(draggedItem);
+      if (targetIndex !== -1 && targetIndex !== currentIndex) {
+        await updateItems('move', { item: draggedItem, new_position: targetIndex });
+      }
+    }
     draggedItem = null;
+    targetIndex = -1;
   }
 
   // Touch events for mobile support
@@ -82,18 +109,19 @@
     const deltaY = touchY - touchStartY;
 
     if (Math.abs(deltaY) > 30) { // Threshold for considering it a drag
-      const targetIndex = items.indexOf(targetItem);
-      const touchedIndex = items.indexOf(touchTarget);
-
-      if (targetIndex !== touchedIndex) {
-        updateItems('move', { item: touchTarget, new_position: targetIndex });
-        touchStartY = touchY;
-      }
+      targetIndex = calculateTargetIndex(e, targetItem);
     }
   }
 
-  function handleTouchEnd() {
+  async function handleTouchEnd() {
+    if (touchTarget) {
+      const currentIndex = items.indexOf(touchTarget);
+      if (targetIndex !== -1 && targetIndex !== currentIndex) {
+        await updateItems('move', { item: touchTarget, new_position: targetIndex });
+      }
+    }
     touchTarget = null;
+    targetIndex = -1;
   }
 
   function startEditing(item) {
@@ -126,49 +154,56 @@
   <h2>All Grocery Items</h2>
   <p class="text-muted">Drag and drop items to reorder. Click to edit. Use delete button to remove.</p>
 
-  <ul class="list-group">
-    {#each items as item}
-      <li
-        class="list-group-item d-flex align-items-center gap-2"
-        draggable={true}
-        on:dragstart={() => handleDragStart(item)}
-        on:dragover={(e) => handleDragOver(e, item)}
-        on:dragend={handleDragEnd}
-        on:touchstart={(e) => handleTouchStart(e, item)}
-        on:touchmove={(e) => handleTouchMove(e, item)}
-        on:touchend={handleTouchEnd}
-      >
-        <div class="drag-handle" aria-label="Drag to reorder">
-          ⋮
-        </div>
-        {#if editingItem === item}
-          <input
-            type="text"
-            class="form-control"
-            bind:value={editingValue}
-            on:blur={handleEditSave}
-            on:keyup={utils.onEnter(handleEditSave)}
-            autofocus
-          />
-        {:else}
-          <span on:click={() => startEditing(item)} style="cursor: pointer; flex-grow: 1;">
-            {item}
-          </span>
-          <span class="ms-auto">
-            <DeleteButton
-              iconOnly={true}
-              on:delete={() => handleDelete(item)}
+  <div class="list-container">
+    <ul class="list-group">
+      {#each items as item, index}
+        <li
+          class="list-group-item d-flex align-items-center gap-2"
+          draggable={true}
+          on:dragstart={() => handleDragStart(item)}
+          on:dragover={(e) => handleDragOver(e, item)}
+          on:dragend={handleDragEnd}
+          on:touchstart={(e) => handleTouchStart(e, item)}
+          on:touchmove={(e) => handleTouchMove(e, item)}
+          on:touchend={handleTouchEnd}
+        >
+          <div class="drag-handle" aria-label="Drag to reorder">
+            ⋮
+          </div>
+          {#if editingItem === item}
+            <input
+              type="text"
+              class="form-control"
+              bind:value={editingValue}
+              on:blur={handleEditSave}
+              on:keyup={utils.onEnter(handleEditSave)}
+              autofocus
             />
-          </span>
-        {/if}
-      </li>
-    {/each}
-  </ul>
+          {:else}
+            <span on:click={() => startEditing(item)} style="cursor: pointer; flex-grow: 1;">
+              {item}
+            </span>
+            <span class="ms-auto">
+              <DeleteButton
+                iconOnly={true}
+                on:delete={() => handleDelete(item)}
+              />
+            </span>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+    {#if targetIndex !== -1}
+      <div class="drop-indicator" style="top: {targetIndex * 50}px"></div>
+    {/if}
+  </div>
 </div>
 
 <style>
   .list-group-item {
     cursor: default;
+    position: relative;
+    height: 50px;
   }
 
   .drag-handle {
@@ -199,6 +234,29 @@
   li[draggable="true"]:active {
     cursor: -webkit-grabbing;
     cursor: grabbing;
+  }
+
+  .list-container {
+    position: relative;
+  }
+
+  .drop-indicator {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background-color: #007bff;
+    display: flex;
+    align-items: center;
+    pointer-events: none;
+  }
+
+  .triangle {
+    position: absolute;
+    left: 0;
+    color: #007bff;
+    font-size: 0.8rem;
+    transform: translateY(-50%);
   }
 
   /* Hide the default touch action hints */
