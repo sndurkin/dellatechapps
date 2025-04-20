@@ -39,9 +39,6 @@
     const data = await response.json();
     items = data.items;
     itemCounts = data.item_counts;
-    items.forEach(item => {
-      itemCounts[item] = itemCounts[item] || 1;
-    });
   }
 
   async function addItemFromInput() {
@@ -54,7 +51,6 @@
 
     state = 'adding';
     let newItems = [...items, newItemName];
-    itemCounts[newItemName] = 1;
     await updateList(newItems, itemCounts);
     state = 'initial';
     newItemInput.value = '';
@@ -63,9 +59,6 @@
   async function addItems(itemsToAdd) {
     state = 'adding';
     let newItems = [...items, ...itemsToAdd];
-    itemsToAdd.forEach(item => {
-      itemCounts[item] = 1;
-    });
     await updateList(newItems, itemCounts);
     state = 'initial';
     newItemInput.value = '';
@@ -83,7 +76,12 @@
 
   async function updateItemCount(item, delta) {
     const newCount = Math.max(1, (itemCounts[item] || 1) + delta);
-    itemCounts[item] = newCount;
+    if (newCount === 1) {
+      delete itemCounts[item];
+    }
+    else {
+      itemCounts[item] = newCount;
+    }
     await updateList(items, itemCounts);
   }
 
@@ -161,7 +159,7 @@
   }
 </script>
 
-<ul class="list-group">
+<ul class="list-group item-list">
   <li class="list-group-item d-flex align-items-center justify-content-between">
     <button class="btn btn-primary btn-sm" on:click={toggleShoppingMode}>
       {isShoppingMode ? 'Done shopping' : 'Go shopping'}
@@ -176,7 +174,7 @@
   {#each items as item}
     <li class="list-group-item d-flex align-items-center gap-2">
       <span class:checked={isShoppingMode && checkedItems[item]}>
-        {item}
+        {item}{isShoppingMode && itemCounts[item] > 1 ? ` (${itemCounts[item]})` : ''}
       </span>
       {#if !isShoppingMode}
         <div class="d-flex align-items-center gap-1 ms-auto">
@@ -229,7 +227,10 @@
   height: 1em;
 }
 
-.list-group-item .checked {
+.item-list {
+  margin-bottom: 5em;
+}
+.item-list .checked {
   position: relative;
   color: #999;
   text-decoration: line-through;

@@ -251,9 +251,6 @@ def add_to_grocery_list(request):
         for item in new_items:
             if item not in all_items_sorted:
                 all_items_sorted.insert(0, item)
-                # Initialize count for new items
-                if item not in new_counts:
-                    new_counts[item] = 1
 
         # Sort the new items based on all_items_sorted
         sorted_items = sort_grocery_items(new_items, all_items_sorted)
@@ -269,9 +266,6 @@ def add_to_grocery_list(request):
         unique_items = list(dict.fromkeys(serializer.validated_data['items']))
         # Initialize counts for new items
         item_counts = serializer.validated_data.get('item_counts', {})
-        for item in unique_items:
-            if item not in item_counts:
-                item_counts[item] = 1
 
         grocery_list = serializer.save(
             user=user,
