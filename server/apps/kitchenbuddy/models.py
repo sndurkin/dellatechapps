@@ -29,4 +29,5 @@ class GroceryList(Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='grocery_lists')
     items = JSONField(_('Items'))
+    item_counts = JSONField(_('Item Counts'), default=dict)
     all_items_sorted = JSONField(_('All Items Sorted'), default=list)

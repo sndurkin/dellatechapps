@@ -14,3 +14,10 @@ class GroceryListSerializer(serializers.ModelSerializer):
         model = GroceryList
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at', 'user']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Ensure item_counts is always a dict
+        if not data.get('item_counts'):
+            data['item_counts'] = {}
+        return data

@@ -150,17 +150,20 @@ def get_grocery_list(request):
     if not grocery_list.exists():
         return Response({
             "items": [],
+            "item_counts": {},
         }, status=status.HTTP_200_OK)
 
     grocery_list = grocery_list.first()
     serializer = GroceryListSerializer(grocery_list, many=False)
     items = serializer.data['items']
+    item_counts = serializer.data['item_counts']
 
     # Sort the items using the reference list
     sorted_items = sort_grocery_items(items, grocery_list.all_items_sorted)
 
     return Response({
         "items": sorted_items,
+        "item_counts": item_counts,
     }, status=status.HTTP_200_OK)
 
 def sort_grocery_items(items, all_items_sorted):
@@ -204,6 +207,10 @@ def add_to_grocery_list(request):
     # Convert all items to lowercase before validation
     request.data['items'] = [item.lower() for item in request.data.get('items', [])]
 
+    # Initialize item_counts if not provided
+    if 'item_counts' not in request.data:
+        request.data['item_counts'] = {}
+
     serializer = GroceryListSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -217,14 +224,17 @@ def add_to_grocery_list(request):
         if not serializer.validated_data['items']:
             grocery_list.items = []
             grocery_list.all_items_sorted = []
+            grocery_list.item_counts = {}
             grocery_list.save()
             return Response({
                 "items": [],
-                "all_items_sorted": []
+                "all_items_sorted": [],
+                "item_counts": {},
             }, status=status.HTTP_200_OK)
 
         # Update existing list
         new_items = serializer.validated_data['items']
+        new_counts = serializer.validated_data.get('item_counts', {})
 
         # Remove duplicates from new items
         new_items = list(dict.fromkeys(new_items))
@@ -232,7 +242,8 @@ def add_to_grocery_list(request):
         if not new_items:
             return Response({
                 "items": grocery_list.items,
-                "all_items_sorted": grocery_list.all_items_sorted
+                "all_items_sorted": grocery_list.all_items_sorted,
+                "item_counts": grocery_list.item_counts,
             }, status=status.HTTP_200_OK)
 
         # Add new items to the beginning of all_items_sorted
@@ -240,6 +251,9 @@ def add_to_grocery_list(request):
         for item in new_items:
             if item not in all_items_sorted:
                 all_items_sorted.insert(0, item)
+                # Initialize count for new items
+                if item not in new_counts:
+                    new_counts[item] = 1
 
         # Sort the new items based on all_items_sorted
         sorted_items = sort_grocery_items(new_items, all_items_sorted)
@@ -247,20 +261,29 @@ def add_to_grocery_list(request):
         # Update both items and all_items_sorted
         grocery_list.items = sorted_items
         grocery_list.all_items_sorted = all_items_sorted
+        grocery_list.item_counts = new_counts
         grocery_list.save()
     else:
         # Create new list - for new lists, items and all_items_sorted are the same
         # Remove duplicates from initial items
         unique_items = list(dict.fromkeys(serializer.validated_data['items']))
+        # Initialize counts for new items
+        item_counts = serializer.validated_data.get('item_counts', {})
+        for item in unique_items:
+            if item not in item_counts:
+                item_counts[item] = 1
+
         grocery_list = serializer.save(
             user=user,
             all_items_sorted=unique_items,
-            items=unique_items
+            items=unique_items,
+            item_counts=item_counts
         )
 
     return Response({
         "items": grocery_list.items,
-        "all_items_sorted": grocery_list.all_items_sorted
+        "all_items_sorted": grocery_list.all_items_sorted,
+        "item_counts": grocery_list.item_counts,
     }, status=status.HTTP_201_CREATED)
 
 @api_view(['GET', 'POST'])

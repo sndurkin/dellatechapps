@@ -213,8 +213,8 @@
     cursor: -webkit-grab;
     cursor: grab;
     color: #aaa;
-    margin-right: 8px;
-    padding: 5px;
+    width: 1.5em;
+    margin-right: 0.25em;
     display: flex;
     align-items: center;
     justify-content: center;

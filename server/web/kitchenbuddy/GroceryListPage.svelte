@@ -10,6 +10,7 @@
   export let active;
 
   let items = [];
+  let itemCounts = {};
   let state = 'initial';
   let newItemInput;
   let isShoppingMode = false;
@@ -37,6 +38,10 @@
     const response = await fetch(`/api/list/?username=${encodeURIComponent(recipeUtils.getUsername())}`);
     const data = await response.json();
     items = data.items;
+    itemCounts = data.item_counts;
+    items.forEach(item => {
+      itemCounts[item] = itemCounts[item] || 1;
+    });
   }
 
   async function addItemFromInput() {
@@ -45,9 +50,12 @@
       return;
     }
 
+    const newItemName = newItemInput.value.trim();
+
     state = 'adding';
-    let newItems = [...items, newItemInput.value];
-    await updateList(newItems);
+    let newItems = [...items, newItemName];
+    itemCounts[newItemName] = 1;
+    await updateList(newItems, itemCounts);
     state = 'initial';
     newItemInput.value = '';
   }
@@ -55,26 +63,39 @@
   async function addItems(itemsToAdd) {
     state = 'adding';
     let newItems = [...items, ...itemsToAdd];
-    await updateList(newItems);
+    itemsToAdd.forEach(item => {
+      itemCounts[item] = 1;
+    });
+    await updateList(newItems, itemCounts);
     state = 'initial';
     newItemInput.value = '';
   }
 
   async function handleDeleteList() {
-    await updateList([]);
+    await updateList([], {});
   }
 
   async function handleDeleteItem(item) {
     const newItems = items.filter(i => i !== item);
-    await updateList(newItems);
+    delete itemCounts[item];
+    await updateList(newItems, itemCounts);
   }
 
-  function toggleShoppingMode() {
+  async function updateItemCount(item, delta) {
+    const newCount = Math.max(1, (itemCounts[item] || 1) + delta);
+    itemCounts[item] = newCount;
+    await updateList(items, itemCounts);
+  }
+
+  async function toggleShoppingMode() {
     isShoppingMode = !isShoppingMode;
     if (!isShoppingMode) {
       // When exiting shopping mode, delete all checked items
       const uncheckedItems = items.filter(item => !(item in checkedItems));
-      updateList(uncheckedItems);
+      for (let item of Object.keys(checkedItems)) {
+        delete itemCounts[item];
+      }
+      await updateList(uncheckedItems, itemCounts);
       checkedItems = {};
     }
   }
@@ -118,7 +139,7 @@
     }
   }
 
-  async function updateList(newItems) {
+  async function updateList(newItems, newItemCounts) {
     const response = await fetch(`/api/list/`, {
       method: 'POST',
       headers: {
@@ -127,6 +148,7 @@
       },
       body: JSON.stringify({
         items: newItems,
+        item_counts: newItemCounts,
         username: recipeUtils.getUsername(),
       }),
     });
@@ -134,6 +156,7 @@
     if (response.ok) {
       const data = await response.json();
       items = data.items;
+      itemCounts = data.item_counts;
     }
   }
 </script>
@@ -156,11 +179,16 @@
         {item}
       </span>
       {#if !isShoppingMode}
-        <span class="ms-auto">
+        <div class="d-flex align-items-center gap-1 ms-auto">
+          <div class="btn-group btn-group-sm count-group">
+            <button class="btn btn-outline-secondary" on:click={() => updateItemCount(item, -1)}>-</button>
+            <span class="px-2">{itemCounts[item] || 1}</span>
+            <button class="btn btn-outline-secondary" on:click={() => updateItemCount(item, 1)}>+</button>
+          </div>
           <DeleteButton
             iconOnly={true}
             on:delete={() => handleDeleteItem(item)} />
-        </span>
+        </div>
       {:else}
         <span class="ms-auto">
           <input
@@ -205,5 +233,14 @@
   position: relative;
   color: #999;
   text-decoration: line-through;
+}
+
+.count-group {
+  margin-right: 1em;
+}
+
+.count-group > .btn {
+  width: 2em;
+  font-size: 0.875rem;
 }
 </style>
