@@ -157,18 +157,20 @@
   <div class="list-container">
     <ul class="list-group">
       {#each items as item, index}
-        <li
-          class="list-group-item d-flex align-items-center gap-2"
-          draggable={true}
-          on:dragstart={() => handleDragStart(item)}
-          on:dragover={(e) => handleDragOver(e, item)}
-          on:dragend={handleDragEnd}
-          on:touchstart={(e) => handleTouchStart(e, item)}
-          on:touchmove={(e) => handleTouchMove(e, item)}
-          on:touchend={handleTouchEnd}
-        >
-          <div class="drag-handle" aria-label="Drag to reorder">
-            ⋮
+        <li class="list-group-item d-flex align-items-center gap-2">
+          <div
+            aria-role="button"
+            aria-label="Drag to reorder"
+            class="drag-handle"
+            draggable={true}
+            on:dragstart={() => handleDragStart(item)}
+            on:dragover={(e) => handleDragOver(e, item)}
+            on:dragend={handleDragEnd}
+            on:touchstart={(e) => handleTouchStart(e, item)}
+            on:touchmove={(e) => handleTouchMove(e, item)}
+            on:touchend={handleTouchEnd}
+          >
+            ⋮⋮
           </div>
           {#if editingItem === item}
             <input
