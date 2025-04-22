@@ -34,13 +34,6 @@ def recipe_view(request):
     elif request.method == 'GET':
         return get_recipes(request)
 
-@api_view(['GET', 'POST'])
-def grocery_list_view(request):
-    if request.method == 'POST':
-        return add_to_grocery_list(request)
-    elif request.method == 'GET':
-        return get_grocery_list(request)
-
 def create_recipe(request):
     username = request.data.pop('username', None)
     if not username:
@@ -145,6 +138,7 @@ def get_recipes(request):
         "recipes": serializer.data,
     }, status=status.HTTP_200_OK)
 
+@api_view(['GET'])
 def get_grocery_list(request):
     grocery_list = GroceryList.objects.filter(user__username=request.GET.get('username')).order_by('-created_at')
     if not grocery_list.exists():
@@ -197,6 +191,7 @@ def sort_grocery_items(items, all_items_sorted):
     # Sort items based on their positions
     return sorted(items, key=lambda x: item_positions[x])
 
+@api_view(['POST'])
 def add_to_grocery_list(request):
     username = request.data.pop('username', None)
     if not username:
@@ -220,45 +215,31 @@ def add_to_grocery_list(request):
     # Get or create grocery list
     grocery_list = GroceryList.objects.filter(user=user).first()
     if grocery_list:
-        # If empty list is provided, clear the grocery list
-        if not serializer.validated_data['items']:
-            grocery_list.items = []
-            grocery_list.all_items_sorted = []
-            grocery_list.item_counts = {}
-            grocery_list.save()
-            return Response({
-                "items": [],
-                "all_items_sorted": [],
-                "item_counts": {},
-            }, status=status.HTTP_200_OK)
-
-        # Update existing list
+        # Add to existing list
         new_items = serializer.validated_data['items']
-        new_counts = serializer.validated_data.get('item_counts', {})
 
-        # Remove duplicates from new items
-        new_items = list(dict.fromkeys(new_items))
+        # Count occurrences of each item
+        updated_item_counts = grocery_list.item_counts.copy()
+        for item in new_items:
+            updated_item_counts[item] = updated_item_counts.get(item, 0) + 1
 
-        if not new_items:
-            return Response({
-                "items": grocery_list.items,
-                "all_items_sorted": grocery_list.all_items_sorted,
-                "item_counts": grocery_list.item_counts,
-            }, status=status.HTTP_200_OK)
+        # Combine existing items with new items, removing duplicates
+        combined_items = list(dict.fromkeys(grocery_list.items + new_items))
 
-        # Add new items to the beginning of all_items_sorted
+        # Add new items to the beginning of all_items_sorted if they don't exist
         all_items_sorted = grocery_list.all_items_sorted
         for item in new_items:
             if item not in all_items_sorted:
                 all_items_sorted.insert(0, item)
 
-        # Sort the new items based on all_items_sorted
-        sorted_items = sort_grocery_items(new_items, all_items_sorted)
+        # Sort the combined items based on all_items_sorted
+        sorted_items = sort_grocery_items(combined_items, all_items_sorted)
 
         # Update both items and all_items_sorted
         grocery_list.items = sorted_items
         grocery_list.all_items_sorted = all_items_sorted
-        grocery_list.item_counts = new_counts
+        grocery_list.item_counts = updated_item_counts
+
         grocery_list.save()
     else:
         # Create new list - for new lists, items and all_items_sorted are the same
@@ -347,5 +328,101 @@ def manage_all_items_sorted(request):
 
     return Response({
         "all_items_sorted": all_items_sorted,
+    }, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+def remove_from_grocery_list(request):
+    username = request.data.pop('username', None)
+    if not username:
+        return Response({
+            "error": "username is a required field",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    items_to_remove = request.data.get('items', [])
+    if not isinstance(items_to_remove, list):
+        items_to_remove = [items_to_remove]
+
+    # Convert all items to lowercase
+    items_to_remove = [item.lower() for item in items_to_remove]
+
+    user, _ = User.objects.get_or_create(username=username)
+    grocery_list = GroceryList.objects.filter(user=user).first()
+
+    if not grocery_list:
+        return Response({
+            "error": "No grocery list found for this user",
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    # Remove items from the main list
+    grocery_list.items = [item for item in grocery_list.items if item not in items_to_remove]
+
+    # Remove items from item_counts
+    for item in items_to_remove:
+        if item in grocery_list.item_counts:
+            del grocery_list.item_counts[item]
+
+    grocery_list.save()
+
+    return Response({
+        "items": grocery_list.items,
+        "all_items_sorted": grocery_list.all_items_sorted,
+        "item_counts": grocery_list.item_counts,
+    }, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+def update_item_count(request):
+    username = request.data.pop('username', None)
+    if not username:
+        return Response({
+            "error": "username is a required field",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    item = request.data.get('item')
+    count = request.data.get('count')
+
+    if item is None or count is None:
+        return Response({
+            "error": "Both item and count are required fields",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        count = int(count)
+        if count < 1:
+            return Response({
+                "error": "Count must be a positive integer",
+            }, status=status.HTTP_400_BAD_REQUEST)
+    except ValueError:
+        return Response({
+            "error": "Count must be a positive integer",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Convert item to lowercase
+    item = item.lower()
+
+    user, _ = User.objects.get_or_create(username=username)
+    grocery_list = GroceryList.objects.filter(user=user).first()
+
+    if not grocery_list:
+        return Response({
+            "error": "No grocery list found for this user",
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    if item not in grocery_list.items:
+        return Response({
+            "error": f"Item '{item}' not found in grocery list",
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    # Update the count
+    if count == 1:
+        del grocery_list.item_counts[item]
+    else:
+        grocery_list.item_counts[item] = count
+
+    grocery_list.save()
+
+    return Response({
+        "items": grocery_list.items,
+        "all_items_sorted": grocery_list.all_items_sorted,
+        "item_counts": grocery_list.item_counts,
     }, status=status.HTTP_200_OK)
 

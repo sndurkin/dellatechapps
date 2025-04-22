@@ -50,50 +50,73 @@
     const newItemName = newItemInput.value.trim();
 
     state = 'adding';
-    let newItems = [...items, newItemName];
-    await updateList(newItems, itemCounts);
+    await addItems([newItemName], {});
     state = 'initial';
     newItemInput.value = '';
   }
 
-  async function addItems(itemsToAdd) {
+  async function addItemsFromSpeech(itemsToAdd) {
     state = 'adding';
-    let newItems = [...items, ...itemsToAdd];
-    await updateList(newItems, itemCounts);
+    await addItems([...items, ...itemsToAdd], {});
     state = 'initial';
     newItemInput.value = '';
+  }
+
+  async function removeItems(itemsToRemove) {
+    const response = await fetch(`/api/list/remove/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': utils.getCsrfToken(),
+      },
+      body: JSON.stringify({
+        items: itemsToRemove,
+        username: recipeUtils.getUsername(),
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      items = data.items;
+      itemCounts = data.item_counts;
+    }
   }
 
   async function handleDeleteList() {
-    await updateList([], {});
+    await removeItems(items);
   }
 
   async function handleDeleteItem(item) {
-    const newItems = items.filter(i => i !== item);
-    delete itemCounts[item];
-    await updateList(newItems, itemCounts);
+    await removeItems([item]);
   }
 
   async function updateItemCount(item, delta) {
     const newCount = Math.max(1, (itemCounts[item] || 1) + delta);
-    if (newCount === 1) {
-      delete itemCounts[item];
+    const response = await fetch(`/api/list/update-count/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': utils.getCsrfToken(),
+      },
+      body: JSON.stringify({
+        item: item,
+        count: newCount,
+        username: recipeUtils.getUsername(),
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      items = data.items;
+      itemCounts = data.item_counts;
     }
-    else {
-      itemCounts[item] = newCount;
-    }
-    await updateList(items, itemCounts);
   }
 
   async function toggleShoppingMode() {
     isShoppingMode = !isShoppingMode;
     if (!isShoppingMode) {
       // When exiting shopping mode, delete all checked items
-      const uncheckedItems = items.filter(item => !(item in checkedItems));
-      for (let item of Object.keys(checkedItems)) {
-        delete itemCounts[item];
-      }
-      await updateList(uncheckedItems, itemCounts);
+      await removeItems(Object.keys(checkedItems));
       checkedItems = {};
     }
   }
@@ -133,12 +156,12 @@
     }
 
     if (itemsToAdd.length > 0) {
-      await addItems(itemsToAdd);
+      await addItemsFromSpeech(itemsToAdd);
     }
   }
 
-  async function updateList(newItems, newItemCounts) {
-    const response = await fetch(`/api/list/`, {
+  async function addItems(newItems) {
+    const response = await fetch(`/api/list/add/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -146,7 +169,6 @@
       },
       body: JSON.stringify({
         items: newItems,
-        item_counts: newItemCounts,
         username: recipeUtils.getUsername(),
       }),
     });
