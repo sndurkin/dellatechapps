@@ -69,7 +69,7 @@ def create_recipe(request):
     }))
 
     data = {
-        "model": "gpt-4o",
+        "model": "gpt-4.1",
         "temperature": 1,
         "messages": [{
             "role": "system",
