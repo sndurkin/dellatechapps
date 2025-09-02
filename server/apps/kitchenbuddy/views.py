@@ -189,24 +189,6 @@ def sort_grocery_items(items, all_items_sorted):
         except ValueError:
             item_positions[item] = -1
 
-    # For items without exact matches, find best matches using SequenceMatcher
-    for item in [i for i, pos in item_positions.items() if pos == -1]:
-        clean_item = extract_item_name(item)
-        best_ratio = 0
-        best_position = -1
-
-        for idx, reference in enumerate(all_items_sorted):
-            # Compare clean item name against reference item (case-insensitively)
-            matcher = SequenceMatcher(None, clean_item, reference.lower())
-            ratio = matcher.ratio()
-
-            # Only consider matches with ratio > 0.8 (very similar strings)
-            if ratio > 0.8 and ratio > best_ratio:
-                best_ratio = ratio
-                best_position = idx
-
-        item_positions[item] = best_position
-
     # Sort items based on their positions
     return sorted(items, key=lambda x: item_positions[x])
 
@@ -250,7 +232,7 @@ def add_to_grocery_list(request):
         for item in new_items:
             clean_item = extract_item_name(item)
             if clean_item not in all_items_sorted:
-                all_items_sorted.insert(0, clean_item)
+                all_items_sorted.insert(get_best_position(clean_item, all_items_sorted), clean_item)
 
         # Sort the combined items based on all_items_sorted
         sorted_items = sort_grocery_items(combined_items, all_items_sorted)
@@ -282,6 +264,17 @@ def add_to_grocery_list(request):
         "all_items_sorted": grocery_list.all_items_sorted,
         "item_counts": grocery_list.item_counts,
     }, status=status.HTTP_201_CREATED)
+
+def get_best_position(item, all_items_sorted):
+    best_ratio = 0
+    best_position = 0
+    for idx, reference in enumerate(all_items_sorted):
+        matcher = SequenceMatcher(None, item.lower(), reference.lower())
+        ratio = matcher.ratio()
+        if ratio > 0.8 and ratio > best_ratio:
+            best_ratio = ratio
+            best_position = idx
+    return best_position
 
 @api_view(['GET', 'POST'])
 def manage_all_items_sorted(request):
