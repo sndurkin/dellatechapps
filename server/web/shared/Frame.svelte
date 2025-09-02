@@ -12,11 +12,11 @@
 <style>
 footer {
   position: fixed;
+  left: 0;
   bottom: 0;
-  width: 100%;
   color: #ccc;
   padding: 0.5em;
-  text-align: center;
   pointer-events: none;
+  z-index: -1;
 }
 </style>
