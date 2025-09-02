@@ -30,10 +30,12 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
     "storymagic.app", "www.storymagic.app",
     "kitchenbuddy.app", "www.kitchenbuddy.app",
+    "dellatech.app", "www.dellatech.app",
 ]
 if DEBUG:
     ALLOWED_HOSTS.append("storymagic.local")
     ALLOWED_HOSTS.append("kitchenbuddy.local")
+    ALLOWED_HOSTS.append("dellatech.local")
 
 # Apparently, this is needed for the Sites framework, which is used for multi-site support.
 SITE_ID = 1

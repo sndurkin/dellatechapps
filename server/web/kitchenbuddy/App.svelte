@@ -4,11 +4,12 @@
   import Home from './Home.svelte';
   import CreateUsernameForm from './CreateUsernameForm.svelte';
 
-  import Frame from '../Frame.svelte';
+  import Frame from '../shared/Frame.svelte';
   import * as recipeUtils from './recipeUtils';
 
   const paths = window.location.pathname.split('/');
-  const state = paths.filter(p => p).length === 0 ? 'select-username' : 'home';
+  console.log('paths: ', paths);
+  const state = paths.filter(p => p).length === 1 ? 'select-username' : 'home';
 
   onMount(() => {
     if (state === 'home') {

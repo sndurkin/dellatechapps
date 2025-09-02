@@ -3,7 +3,6 @@ import os
 from django.urls import path
 from django.conf import settings
 from django.http import HttpResponse
-from django.views.static import serve
 
 from .views import create_story
 
@@ -16,8 +15,4 @@ def home_view(request):
 urlpatterns = [
     path('', home_view, name='home'),
     path('api/stories/', create_story, name='create_story'),
-
-    path('<path:path>', serve, {
-        'document_root': os.path.join(settings.BASE_DIR, 'static/storymagic'),
-    }),
 ]

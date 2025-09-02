@@ -1,8 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import * as recipeUtils from './recipeUtils';
-  import * as utils from '../utils';
-  import DeleteButton from '../DeleteButton.svelte';
+  import * as utils from '../shared/utils';
+  import DeleteButton from '../shared/DeleteButton.svelte';
 
 
   export let active;
@@ -24,13 +24,13 @@
   });
 
   async function loadItems() {
-    const response = await fetch(`/api/manage-all/?username=${encodeURIComponent(recipeUtils.getUsername())}`);
+    const response = await fetch(`/kitchenbuddy/api/manage-all/?username=${encodeURIComponent(recipeUtils.getUsername())}`);
     const data = await response.json();
     items = data.all_items_sorted || [];
   }
 
   async function updateItems(action, payload) {
-    const response = await fetch('/api/manage-all/', {
+    const response = await fetch('/kitchenbuddy/api/manage-all/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

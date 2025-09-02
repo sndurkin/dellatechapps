@@ -3,9 +3,9 @@
 
   import * as recipeUtils from './recipeUtils';
 
-  import DeleteButton from '../DeleteButton.svelte';
-  import SpeechRecognitionButton from '../SpeechRecognitionButton.svelte';
-  import * as utils from '../utils';
+  import DeleteButton from '../shared/DeleteButton.svelte';
+  import SpeechRecognitionButton from '../shared/SpeechRecognitionButton.svelte';
+  import * as utils from '../shared/utils';
 
   export let active;
 
@@ -35,7 +35,7 @@
   });
 
   async function loadItems() {
-    const response = await fetch(`/api/list/?username=${encodeURIComponent(recipeUtils.getUsername())}`);
+    const response = await fetch(`/kitchenbuddy/api/list/?username=${encodeURIComponent(recipeUtils.getUsername())}`);
     const data = await response.json();
     items = data.items;
     itemCounts = data.item_counts;
@@ -63,7 +63,7 @@
   }
 
   async function removeItems(itemsToRemove) {
-    const response = await fetch(`/api/list/remove/`, {
+    const response = await fetch(`/kitchenbuddy/api/list/remove/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -92,7 +92,7 @@
 
   async function updateItemCount(item, delta) {
     const newCount = Math.max(1, (itemCounts[item] || 1) + delta);
-    const response = await fetch(`/api/list/update-count/`, {
+    const response = await fetch(`/kitchenbuddy/api/list/update-count/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -161,7 +161,7 @@
   }
 
   async function addItems(newItems) {
-    const response = await fetch(`/api/list/add/`, {
+    const response = await fetch(`/kitchenbuddy/api/list/add/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

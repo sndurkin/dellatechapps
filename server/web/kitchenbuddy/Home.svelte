@@ -8,7 +8,7 @@
   import AllSortedGroceryItemsPage from './AllSortedGroceryItemsPage.svelte';
   import * as recipeUtils from './recipeUtils';
 
-  import DeleteButton from '../DeleteButton.svelte';
+  import DeleteButton from '../shared/DeleteButton.svelte';
 
 
   const pages = {
@@ -50,7 +50,7 @@
   let groceryListAllPage;
 
   function navigateTo(page, pageData) {
-    const newPath = `/u/${username}${pages[page].path}`;
+    const newPath = `/kitchenbuddy/u/${username}${pages[page].path}`;
     if (window.location.pathname !== newPath) {
       window.history.pushState({}, '', newPath);
       setPageFromPath(pageData);
@@ -63,7 +63,7 @@
 
   function setPageFromPath(pageData = {}) {
     const paths = window.location.pathname.split('/');
-    activePage = pagesByPath[`/${paths?.[3]}/`] || 'home';
+    activePage = pagesByPath[`/${paths?.[4]}/`] || 'home';
     activePageData = pageData;
     console.log('setPageFromPath: ', activePage, activePageData);
   }

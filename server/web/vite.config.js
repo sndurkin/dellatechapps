@@ -17,12 +17,14 @@ export default defineConfig({
   },
   server: {
     watch: {
-      usePolling: false,
+      usePolling: process.env.CHOKIDAR_USEPOLLING === 'true',
     },
     host: true,
     strictPort: true,
     port: 5173,
-    hmr: false,
+    hmr: {
+      port: 5173,
+    },
     allowedHosts: true
   },
   plugins: [svelte({

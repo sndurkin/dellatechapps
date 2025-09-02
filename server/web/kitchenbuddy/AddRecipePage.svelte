@@ -2,7 +2,7 @@
   import { onMount, createEventDispatcher } from 'svelte';
 
   import * as recipeUtils from './recipeUtils';
-  import * as utils from '../utils';
+  import * as utils from '../shared/utils';
 
 
   const dispatch = createEventDispatcher();
@@ -15,7 +15,7 @@
     state = 'fetching';
     error = '';
 
-    const response = await fetch('/api/recipes/', {
+    const response = await fetch('/kitchenbuddy/api/recipes/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

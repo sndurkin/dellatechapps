@@ -3,8 +3,8 @@
   import Story from './Story.svelte';
   import WordHelp from './WordHelp.svelte';
 
-  import Frame from '../Frame.svelte';
-  import * as utils from '../utils';
+  import Frame from '../shared/Frame.svelte';
+  import * as utils from '../shared/utils';
 
 
   let state = 'initial';
@@ -16,7 +16,7 @@
     const { topic, grade, sentenceCount } = event.detail;
 
     state = 'creating';
-    const resp = await fetch('/api/stories/', {
+    const resp = await fetch('/storymagic/api/stories/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -17,6 +17,8 @@ Including another URLconf
 from django.contrib import admin
 from django.http import HttpResponse
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
 
 from server.apps.storymagic import urls as storymagic_urls
 from server.apps.kitchenbuddy import urls as kitchenbuddy_urls
@@ -29,3 +31,7 @@ urlpatterns = [
     path("storymagic/", include(storymagic_urls)),
     path("kitchenbuddy/", include(kitchenbuddy_urls)),
 ]
+
+# Serve static files during development
+if settings.DEBUG:
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

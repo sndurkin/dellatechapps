@@ -19,6 +19,7 @@ RUN rm -f /app/server/web/package-lock.json && rm -rf /app/server/web/node_modul
 RUN cd server/web && npm install
 
 # Don't copy source code - will be mounted as volume for live development
+
 EXPOSE 8000 5173
 
 # Use a script to run both the Python server and Vite dev server with hot reloading

@@ -17,7 +17,7 @@
   }
 
   onMount(async () => {
-    const response = await fetch(`/api/recipes/?username=${encodeURIComponent(recipeUtils.getUsername())}`, {
+    const response = await fetch(`/kitchenbuddy/api/recipes/?username=${encodeURIComponent(recipeUtils.getUsername())}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

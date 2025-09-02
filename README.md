@@ -22,10 +22,9 @@ The application consists of three main services:
    - **Windows**: Open Notepad as Administrator and edit `C:\Windows\System32\drivers\etc\hosts`
    - **Mac/Linux**: Edit `/etc/hosts` with sudo privileges (`sudo nano /etc/hosts`)
 
-2. Add the following lines:
+2. Add the following line:
    ```
-   127.0.0.1 storymagic.local
-   127.0.0.1 kitchenbuddy.local
+   127.0.0.1 dellatech.local
    ```
 
 3. Save the file and close it.
@@ -138,8 +137,8 @@ docker exec -it dellatechapps-web-1 bash
 ## Access Points
 
 - Main application (via Nginx): `http://localhost:80`
-- StoryMagic: `http://storymagic.local`
-- KitchenBuddy: `http://kitchenbuddy.local`
+- StoryMagic: `http://dellatech.local/storymagic`
+- KitchenBuddy: `http://dellatech.local/kitchenbuddy`
 - Django development server: `http://localhost:8000`
 - PostgreSQL: Port `5432` (internal to Docker network)
 

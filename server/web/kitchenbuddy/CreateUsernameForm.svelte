@@ -1,5 +1,5 @@
 <script>
-  import * as utils from '../utils';
+  import * as utils from '../shared/utils';
 
 
   let username = '';
@@ -9,7 +9,7 @@
   }
 
   function handleSelectUsername() {
-    window.location.href = `/u/${username}/`;
+    window.location.href = `/kitchenbuddy/u/${username}/`;
   }
 </script>
 
