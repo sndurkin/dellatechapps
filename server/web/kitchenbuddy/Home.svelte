@@ -8,8 +8,6 @@
   import AllSortedGroceryItemsPage from './AllSortedGroceryItemsPage.svelte';
   import * as recipeUtils from './recipeUtils';
 
-  import DeleteButton from '../shared/DeleteButton.svelte';
-
 
   const pages = {
     'home': {
