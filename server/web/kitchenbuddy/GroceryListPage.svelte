@@ -264,7 +264,7 @@
   {/if}
 </ul>
 {#if !isShoppingMode}
-  <div class="container position-fixed bottom-0 start-0 end-0 mb-2">
+  <div class="container position-sticky bottom-0 start-0 end-0 mb-2">
     <div class="col-lg-8 col-md-10 col-sm-12 m-auto">
       <div class="d-flex align-items-center gap-2">
         <div class="input-container">
