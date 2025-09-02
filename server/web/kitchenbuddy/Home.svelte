@@ -130,5 +130,7 @@
 </div>
 
 <style>
-
+.tab-pane {
+  position: relative;
+}
 </style>

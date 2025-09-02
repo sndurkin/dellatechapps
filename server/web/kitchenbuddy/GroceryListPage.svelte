@@ -15,6 +15,8 @@
   let newItemInput;
   let isShoppingMode = false;
   let checkedItems = {};
+  let newlyAddedItems = new Set();
+  let itemRefs = {};
 
   $: if (active) {
     loadItems();
@@ -50,14 +52,14 @@
     const newItemName = newItemInput.value.trim();
 
     state = 'adding';
-    await addItems([newItemName], {});
+    await addItems([newItemName]);
     state = 'initial';
     newItemInput.value = '';
   }
 
   async function addItemsFromSpeech(itemsToAdd) {
     state = 'adding';
-    await addItems([...items, ...itemsToAdd], {});
+    await addItems(itemsToAdd);
     state = 'initial';
     newItemInput.value = '';
   }
@@ -160,7 +162,28 @@
     }
   }
 
+  function scrollToAndFlashItem(itemName) {
+    const element = itemRefs[itemName];
+    if (element) {
+      // Scroll to the item with smooth behavior
+      element.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest'
+      });
+
+      // Add flash class and remove it after animation
+      element.classList.add('flash-item');
+      setTimeout(() => {
+        element.classList.remove('flash-item');
+        newlyAddedItems.delete(itemName);
+      }, 1500);
+    }
+  }
+
   async function addItems(newItems) {
+    const previousItems = [...items];
+
     const response = await fetch(`/kitchenbuddy/api/list/add/`, {
       method: 'POST',
       headers: {
@@ -177,6 +200,17 @@
       const data = await response.json();
       items = data.items;
       itemCounts = data.item_counts;
+
+      // Find newly added items and mark them for flashing
+      const actuallyNewItems = items.filter(item => !previousItems.includes(item));
+      actuallyNewItems.forEach(item => newlyAddedItems.add(item));
+
+      // After DOM update, scroll to and flash the first new item
+      if (actuallyNewItems.length > 0) {
+        setTimeout(() => {
+          scrollToAndFlashItem(actuallyNewItems[0]);
+        }, 100);
+      }
     }
   }
 </script>
@@ -194,7 +228,7 @@
     {/if}
   </li>
   {#each items as item}
-    <li class="list-group-item d-flex align-items-center gap-2">
+    <li class="list-group-item d-flex align-items-center gap-2" bind:this={itemRefs[item]}>
       <span class:checked={isShoppingMode && checkedItems[item]}>
         {item}{isShoppingMode && itemCounts[item] > 1 ? ` (${itemCounts[item]})` : ''}
       </span>
@@ -228,25 +262,47 @@
       </div>
     </li>
   {/if}
-  {#if !isShoppingMode}
-    <li class="list-group-item d-flex align-items-center gap-2">
-      <input
-        bind:this={newItemInput}
-        type="text"
-        class="form-control"
-        placeholder="Enter an item"
-        on:keyup={utils.onEnter(addItemFromInput)}
-      />
-      <button class="btn btn-primary" on:click={addItemFromInput}>Add</button>
-    </li>
-  {/if}
 </ul>
-<SpeechRecognitionButton on:speech={handleSpeech} />
+{#if !isShoppingMode}
+  <div class="container position-fixed bottom-0 start-0 end-0 mb-2">
+    <div class="col-lg-8 col-md-10 col-sm-12 m-auto">
+      <div class="d-flex align-items-center gap-2">
+        <div class="input-container">
+          <input
+            bind:this={newItemInput}
+            type="text"
+            class="form-control"
+            placeholder="Enter an item"
+            on:keyup={utils.onEnter(addItemFromInput)}
+          />
+          <SpeechRecognitionButton on:speech={handleSpeech} className="speech-recognition-button" />
+        </div>
+        <button class="btn btn-primary" on:click={addItemFromInput}>Add</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
 .spinner-border {
   width: 1em;
   height: 1em;
+}
+
+.input-container {
+  position: relative;
+  flex-grow: 1;
+}
+:global(.speech-recognition-button) {
+  position: absolute;
+  right: 1em;
+  top: 0;
+  bottom: 0;
+  margin: 0 !important;
+}
+.input-container input {
+  padding-right: 3rem;
+  width: 100%;
 }
 
 .item-list {
@@ -265,5 +321,23 @@
 .count-group > .btn {
   width: 2em;
   font-size: 0.875rem;
+}
+
+:global(.flash-item) {
+  animation: flashHighlight 1.5s ease-out;
+}
+
+@keyframes flashHighlight {
+  0% {
+    background-color: #cde7ff;
+    transform: scale(1.02);
+  }
+  25% {
+    background-color: #cde7ff;
+  }
+  100% {
+    background-color: transparent;
+    transform: scale(1);
+  }
 }
 </style>
