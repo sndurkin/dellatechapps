@@ -17,6 +17,13 @@ OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 
 client = httpx.Client(http2=True)
 
+def extract_item_name(item_text):
+    """
+    Extract the main item name from text that may contain additional info after a comma.
+    Example: "tomato sauce, 32oz" -> "tomato sauce"
+    """
+    return item_text.split(',')[0].strip().lower()
+
 with open(str(settings.APPS_DIR / 'kitchenbuddy/ai-templates/system_prompt.txt'), 'r') as f:
     system_prompt = f.read()
 
@@ -164,21 +171,33 @@ def sort_grocery_items(items, all_items_sorted):
     # Create a map of item to its position
     item_positions = {}
 
-    # Try exact matches first
+    # Try exact matches first (both full item and clean name)
     for item in items:
+        clean_item = extract_item_name(item)
+
+        # Try exact match with full item first
         try:
             item_positions[item] = all_items_sorted.index(item)
+            continue
+        except ValueError:
+            pass
+
+        # Try exact match with clean item name
+        try:
+            item_positions[item] = all_items_sorted.index(clean_item)
+            continue
         except ValueError:
             item_positions[item] = -1
 
     # For items without exact matches, find best matches using SequenceMatcher
     for item in [i for i, pos in item_positions.items() if pos == -1]:
+        clean_item = extract_item_name(item)
         best_ratio = 0
         best_position = -1
 
         for idx, reference in enumerate(all_items_sorted):
-            # Compare strings case-insensitively
-            matcher = SequenceMatcher(None, item.lower(), reference.lower())
+            # Compare clean item name against reference item (case-insensitively)
+            matcher = SequenceMatcher(None, clean_item, reference.lower())
             ratio = matcher.ratio()
 
             # Only consider matches with ratio > 0.8 (very similar strings)
@@ -199,7 +218,7 @@ def add_to_grocery_list(request):
             "error": "username is a required field",
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    # Convert all items to lowercase before validation
+    # Keep original items with additional info, but convert to lowercase for consistency
     request.data['items'] = [item.lower() for item in request.data.get('items', [])]
 
     # Initialize item_counts if not provided
@@ -218,19 +237,20 @@ def add_to_grocery_list(request):
         # Add to existing list
         new_items = serializer.validated_data['items']
 
-        # Count occurrences of each item
+        # Count occurrences of each item (using full item text)
         updated_item_counts = grocery_list.item_counts.copy()
         for item in new_items:
             updated_item_counts[item] = updated_item_counts.get(item, 0) + 1
 
-        # Combine existing items with new items, removing duplicates
+        # Combine existing items with new items, removing duplicates (preserve full item text)
         combined_items = list(dict.fromkeys(grocery_list.items + new_items))
 
-        # Add new items to the beginning of all_items_sorted if they don't exist
+        # Add new items to all_items_sorted using clean names only
         all_items_sorted = grocery_list.all_items_sorted
         for item in new_items:
-            if item not in all_items_sorted:
-                all_items_sorted.insert(0, item)
+            clean_item = extract_item_name(item)
+            if clean_item not in all_items_sorted:
+                all_items_sorted.insert(0, clean_item)
 
         # Sort the combined items based on all_items_sorted
         sorted_items = sort_grocery_items(combined_items, all_items_sorted)
@@ -242,15 +262,17 @@ def add_to_grocery_list(request):
 
         grocery_list.save()
     else:
-        # Create new list - for new lists, items and all_items_sorted are the same
-        # Remove duplicates from initial items
+        # Create new list - items contain full text, all_items_sorted contains clean names
+        # Remove duplicates from initial items (preserve full item text)
         unique_items = list(dict.fromkeys(serializer.validated_data['items']))
+        # Create all_items_sorted with clean names only
+        unique_clean_items = list(dict.fromkeys([extract_item_name(item) for item in unique_items]))
         # Initialize counts for new items
         item_counts = serializer.validated_data.get('item_counts', {})
 
         grocery_list = serializer.save(
             user=user,
-            all_items_sorted=unique_items,
+            all_items_sorted=unique_clean_items,
             items=unique_items,
             item_counts=item_counts
         )
