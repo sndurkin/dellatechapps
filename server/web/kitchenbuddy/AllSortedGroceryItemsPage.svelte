@@ -88,6 +88,9 @@
     if (draggedItem) {
       const currentIndex = items.indexOf(draggedItem);
       if (targetIndex !== -1 && targetIndex !== currentIndex) {
+        if (targetIndex > currentIndex) {
+          targetIndex--;
+        }
         await updateItems('move', { item: draggedItem, new_position: targetIndex });
       }
     }
@@ -117,6 +120,9 @@
     if (touchTarget) {
       const currentIndex = items.indexOf(touchTarget);
       if (targetIndex !== -1 && targetIndex !== currentIndex) {
+        if (targetIndex > currentIndex) {
+          targetIndex--;
+        }
         await updateItems('move', { item: touchTarget, new_position: targetIndex });
       }
     }
