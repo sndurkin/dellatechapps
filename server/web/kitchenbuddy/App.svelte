@@ -8,7 +8,6 @@
   import * as recipeUtils from './recipeUtils';
 
   const paths = window.location.pathname.split('/');
-  console.log('paths: ', paths);
   const state = paths.filter(p => p).length === 1 ? 'select-username' : 'home';
 
   onMount(() => {

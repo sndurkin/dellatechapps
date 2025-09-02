@@ -65,7 +65,6 @@
     const paths = window.location.pathname.split('/');
     activePage = pagesByPath[`/${paths?.[4]}/`] || 'home';
     activePageData = pageData;
-    console.log('setPageFromPath: ', activePage, activePageData);
   }
 
   function handleOpenRecipe(event) {
