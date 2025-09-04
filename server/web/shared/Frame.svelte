@@ -1,8 +1,8 @@
 
 
 <main>
-  <div class="container">
-    <div class="row mt-3 justify-content-center">
+  <div class="container flex-grow-1 d-flex flex-column">
+    <div class="row flex-grow-1 d-flex flex-column">
       <slot />
     </div>
   </div>
@@ -10,6 +10,13 @@
 <footer>by Della Tech LLC</footer>
 
 <style>
+main {
+  height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+}
+
 footer {
   position: fixed;
   left: 0;

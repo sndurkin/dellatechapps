@@ -12,7 +12,6 @@
   let editingItem = null;
   let editingValue = '';
   let touchStartY = 0;
-  let touchTarget = null;
   let targetIndex = -1; // Track where the dragged item will be inserted
 
   // Move dialog state
@@ -59,44 +58,27 @@
     draggedItem = item;
   }
 
-  function calculateTargetIndex(e, targetItem) {
-    if (!e.currentTarget || !targetItem || items.length === 0) {
-      return -1;
-    }
-
-    const targetElement = e.currentTarget;
-    const rect = targetElement.getBoundingClientRect();
-    const baseIndex = items.indexOf(targetItem);
-
-    // If item not found, return -1
-    if (baseIndex === -1) {
-      return -1;
-    }
-
-    // Ensure clientY exists (for mouse events)
-    if (typeof e.clientY !== 'number') {
-      return baseIndex;
-    }
-
-    const relativeY = e.clientY - rect.top;
-    const isBottomHalf = relativeY > rect.height / 2;
-    return isBottomHalf ? baseIndex + 1 : baseIndex;
-  }
-
-  function handleDragOver(e, targetItem) {
+  function handleDragOver(e) {
     e.preventDefault();
-    if (!draggedItem || draggedItem === targetItem) return;
+    if (!draggedItem) return;
 
-    targetIndex = calculateTargetIndex(e, targetItem);
+    let targetElement = document.elementFromPoint(e.clientX, e.clientY);
+    if (!targetElement.classList.contains('list-group-item')) {
+      targetElement = targetElement.closest('.list-group-item');
+    }
+    if (!targetElement) return;
+
+    targetIndex = calculateTargetIndex(e.clientY, targetElement, draggedItem);
   }
 
   async function handleDragEnd() {
     if (draggedItem) {
-      const currentIndex = items.indexOf(draggedItem);
-      if (targetIndex !== -1 && targetIndex !== currentIndex) {
-        if (targetIndex > currentIndex) {
+      const draggedItemIndex = items.indexOf(draggedItem);
+      if (targetIndex > -1 && targetIndex !== draggedItemIndex) {
+        if (targetIndex > draggedItemIndex) {
           targetIndex--;
         }
+
         await updateItems('move', {
           item: draggedItem,
           new_position: targetIndex,
@@ -110,36 +92,81 @@
   // Touch events for mobile support
   function handleTouchStart(e, item) {
     touchStartY = e.touches[0].clientY;
-    touchTarget = item;
+    draggedItem = item;
   }
 
-  function handleTouchMove(e, targetItem) {
-    if (!touchTarget) return;
-
+  function handleTouchMove(e) {
+    if (!draggedItem) return;
     e.preventDefault();
-    const touchY = e.touches[0].clientY;
+
+    const touch = e.touches[0];
+    const touchY = touch.clientY;
     const deltaY = touchY - touchStartY;
 
+    let targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (!targetElement.classList.contains('list-group-item')) {
+      targetElement = targetElement.closest('.list-group-item');
+    }
+    if (!targetElement) return;
+
     if (Math.abs(deltaY) > 30) { // Threshold for considering it a drag
-      targetIndex = calculateTargetIndex(e, targetItem);
+      targetIndex = calculateTargetIndex(touchY, targetElement, draggedItem);
     }
   }
 
-  async function handleTouchEnd() {
-    if (touchTarget) {
-      const currentIndex = items.indexOf(touchTarget);
-      if (targetIndex !== -1 && targetIndex !== currentIndex) {
-        if (targetIndex > currentIndex) {
+  async function handleTouchEnd(e) {
+    if (draggedItem) {
+      const draggedItemIndex = items.indexOf(draggedItem);
+      if (targetIndex !== -1 && targetIndex !== draggedItemIndex) {
+        if (targetIndex > draggedItemIndex) {
           targetIndex--;
         }
         await updateItems('move', {
-          item: touchTarget,
+          item: draggedItem,
           new_position: targetIndex,
         });
       }
     }
-    touchTarget = null;
+    draggedItem = null;
     targetIndex = -1;
+  }
+
+  function calculateTargetIndex(clientY, targetElement, itemToMove) {
+    if (!targetElement || !itemToMove || items.length === 0) {
+      return -1;
+    }
+
+    // Find the index of the target element within its parent <ul>
+    const parentList = targetElement.closest('ul');
+    if (!parentList) {
+      return -1;
+    }
+
+    // Get all draggable elements (drag-handle divs) within the parent list
+    const allDragHandles = Array.from(parentList.querySelectorAll('.list-group-item'));
+    let targetIndex = allDragHandles.indexOf(targetElement);
+
+    // If target element not found in the list, return -1
+    if (targetIndex === -1) {
+      return -1;
+    }
+
+    // Ensure clientY exists (for mouse events)
+    if (typeof clientY !== 'number') {
+      return targetIndex;
+    }
+
+    const targetRect = targetElement.getBoundingClientRect();
+    const relativeY = clientY - targetRect.top;
+
+    // Determine if cursor is in bottom half of the target element
+    const isBottomHalf = relativeY > targetRect.height / 2;
+
+    // If in bottom half, insert after this element (targetIndex + 1)
+    // If in top half, insert before this element (targetIndex)
+    targetIndex = isBottomHalf ? targetIndex + 1 : targetIndex;
+
+    return targetIndex;
   }
 
   function startEditing(item) {
@@ -210,14 +237,18 @@
   }
 </script>
 
-<div class="container mt-4">
+<div class="all-grocery-items">
   <h2>All Grocery Items</h2>
   <p class="text-muted">Drag and drop items to reorder. Click to edit. Use move icon to jump to position. Use delete button to remove.</p>
 
   <div class="list-container">
     <ul class="list-group">
       {#each items as item, index}
-        <li class="list-group-item d-flex align-items-center gap-2">
+        <li
+          class="list-group-item d-flex align-items-center gap-2"
+          on:dragover={(e) => handleDragOver(e)}
+          on:touchmove={(e) => handleTouchMove(e)}
+        >
           <div
             role="button"
             aria-label="Drag to reorder"
@@ -225,11 +256,9 @@
             class="drag-handle"
             draggable={true}
             on:dragstart={() => handleDragStart(item)}
-            on:dragover={(e) => handleDragOver(e, item)}
             on:dragend={handleDragEnd}
             on:touchstart={(e) => handleTouchStart(e, item)}
-            on:touchmove={(e) => handleTouchMove(e, item)}
-            on:touchend={handleTouchEnd}
+            on:touchend={(e) => handleTouchEnd(e)}
           >
             ⋮⋮
           </div>
@@ -320,6 +349,15 @@
 {/if}
 
 <style>
+  .all-grocery-items {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: auto;
+  }
+
   .list-group-item {
     cursor: default;
     position: relative;
@@ -372,15 +410,6 @@
     display: flex;
     align-items: center;
     pointer-events: none;
-  }
-
-
-
-  /* Hide the default touch action hints */
-  @media (pointer: coarse) {
-    .list-group-item {
-      touch-action: none;
-    }
   }
 
   .move-btn {

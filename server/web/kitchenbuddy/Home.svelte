@@ -79,7 +79,7 @@
   });
 </script>
 
-<nav aria-label="breadcrumb" class="d-flex align-items-center">
+<nav aria-label="breadcrumb" class="d-flex align-items-center mt-2 mb-2">
   <ol class="breadcrumb mb-0">
     <li class={`breadcrumb-item ${activePage === 'home' ? 'active' : ''}`}>
       {#if activePage === 'home'}
@@ -104,7 +104,7 @@
     </a>
   {/if}
 </nav>
-<div class="tab-content mt-3">
+<div class="tab-content mt-2">
   <div class={`tab-pane ${activePage === 'home' ? 'show active' : ''}`}>
     <RecentRecipesPage
       {...activePageData}
@@ -127,7 +127,19 @@
 </div>
 
 <style>
+.tab-content {
+  flex: 1 1 auto;
+
+  display: flex;
+  flex-direction: column;
+}
 .tab-pane {
+  flex: 1 1 auto;
   position: relative;
+
+  display: none;
+}
+.tab-pane.show {
+  display: block;
 }
 </style>

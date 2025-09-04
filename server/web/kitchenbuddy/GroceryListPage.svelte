@@ -215,7 +215,7 @@
   }
 </script>
 
-<ul class="list-group item-list">
+<ul class="list-group mb-2 item-list">
   <li class="list-group-item d-flex align-items-center justify-content-between">
     <button class="btn btn-primary btn-sm" on:click={toggleShoppingMode}>
       {isShoppingMode ? 'Done shopping' : 'Go shopping'}
@@ -264,10 +264,10 @@
   {/if}
 </ul>
 {#if !isShoppingMode}
-  <div class="container position-sticky bottom-0 start-0 end-0 mb-2">
+  <div class="container input-container">
     <div class="col-lg-8 col-md-10 col-sm-12 m-auto">
       <div class="d-flex align-items-center gap-2">
-        <div class="input-container">
+        <div class="input-field">
           <input
             bind:this={newItemInput}
             type="text"
@@ -284,29 +284,13 @@
 {/if}
 
 <style>
-.spinner-border {
-  width: 1em;
-  height: 1em;
-}
-
-.input-container {
-  position: relative;
-  flex-grow: 1;
-}
-:global(.speech-recognition-button) {
-  position: absolute;
-  right: 1em;
-  top: 0;
-  bottom: 0;
-  margin: 0 !important;
-}
-.input-container input {
-  padding-right: 3rem;
-  width: 100%;
-}
-
 .item-list {
-  margin-bottom: 5em;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: calc(3em + env(keyboard-inset-height));
+  overflow: auto;
 }
 .item-list .checked {
   position: relative;
@@ -321,6 +305,35 @@
 .count-group > .btn {
   width: 2em;
   font-size: 0.875rem;
+}
+
+.spinner-border {
+  width: 1em;
+  height: 1em;
+}
+
+.input-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5em;
+  margin-bottom: calc(0.1em + env(keyboard-inset-height));
+}
+.input-field {
+  position: relative;
+  flex-grow: 1;
+}
+:global(.speech-recognition-button) {
+  position: absolute;
+  right: 1em;
+  top: 0;
+  bottom: 0;
+  margin: 0 !important;
+}
+.input-field input {
+  padding-right: 3rem;
+  width: 100%;
 }
 
 :global(.flash-item) {

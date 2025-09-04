@@ -18,7 +18,7 @@
 </script>
 
 <Frame>
-  <div class="col-lg-8 col-md-10 col-sm-12">
+  <div class="flex-grow-1 d-flex flex-column col-lg-8 col-md-10 col-sm-12 align-self-center">
     {#if state === 'select-username'}
       <CreateUsernameForm />
     {:else}
