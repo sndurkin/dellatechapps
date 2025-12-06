@@ -22,6 +22,7 @@ from django.conf.urls.static import static
 
 from server.apps.storymagic import urls as storymagic_urls
 from server.apps.kitchenbuddy import urls as kitchenbuddy_urls
+from server.apps.tablet import urls as tablet_urls
 
 
 urlpatterns = [
@@ -30,6 +31,7 @@ urlpatterns = [
 
     path("storymagic/", include(storymagic_urls)),
     path("kitchenbuddy/", include(kitchenbuddy_urls)),
+    path("tablet/", include(tablet_urls)),
 ]
 
 # Serve static files during development

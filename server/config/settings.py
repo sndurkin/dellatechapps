@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "server.apps.storymagic",
     "server.apps.kitchenbuddy",
+    "server.apps.tablet",
 ]
 
 MIDDLEWARE = [

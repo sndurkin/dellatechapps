@@ -103,7 +103,7 @@ docker-compose up --build
 
 Rebuild services using development Dockerfile:
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker-compose -f docker-compose.dev.yml up --build
 ```
 
 Execute commands in containers:
