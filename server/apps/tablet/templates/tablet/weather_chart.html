@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Temperature Forecast</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: white;
+            font-family: Arial, sans-serif;
+        }
+        .chart-container {
+            width: {{ chart_width }}px;
+            height: {{ chart_height }}px;
+            margin: 0 auto;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+        .axis {
+            stroke: #333;
+            stroke-width: 1;
+        }
+        .grid-line {
+            stroke: #ccc;
+            stroke-width: 0.5;
+            stroke-dasharray: 2,2;
+        }
+        .chart-line {
+            fill: none;
+            stroke: #000;
+            stroke-width: 2;
+        }
+        .uv-area {
+            fill: #999;
+            opacity: 0.3;
+        }
+        .axis-label {
+            fill: #000;
+            font-size: 12px;
+            text-anchor: middle;
+        }
+        .axis-label-y {
+            fill: #000;
+            font-size: 12px;
+            text-anchor: end;
+        }
+        .title {
+            fill: #000;
+            font-size: 16px;
+            font-weight: bold;
+            text-anchor: middle;
+        }
+        .temp-label {
+            fill: #000;
+            font-size: 11px;
+            font-weight: bold;
+            text-anchor: middle;
+        }
+        .uv-label {
+            fill: #000;
+            font-size: 11px;
+            font-weight: bold;
+            text-anchor: middle;
+        }
+        .precip-line {
+            fill: none;
+            stroke: #000;
+            stroke-width: 1.5;
+            stroke-dasharray: 4,4;
+        }
+        .candlestick-line {
+            stroke: #000;
+            stroke-width: 2;
+        }
+        .candlestick-box {
+            fill: #fff;
+            stroke: #000;
+            stroke-width: 2;
+        }
+        .weekly-temp-label {
+            fill: #000;
+            font-size: 10px;
+            font-weight: bold;
+            text-anchor: middle;
+        }
+        .day-label {
+            fill: #000;
+            font-size: 12px;
+            text-anchor: middle;
+        }
+    </style>
+</head>
+<body>
+    <div class="chart-container">
+        <svg viewBox="0 0 {{ chart_width }} {{ chart_height }}" xmlns="http://www.w3.org/2000/svg">
+            <!-- Background -->
+            <rect width="{{ chart_width }}" height="{{ chart_height }}" fill="white"/>
+
+            <!-- Grid lines -->
+            <g id="y-axis">
+                {% for grid_line in grid_lines %}
+                <line x1="{{ padding }}" y1="{{ grid_line.y_pos }}" x2="{{ x_axis_end }}" y2="{{ grid_line.y_pos }}" class="grid-line"/>
+                {% endfor %}
+            </g>
+
+            <!-- X-axis labels -->
+            <g id="x-axis">
+                {% for hour_label in hour_labels %}
+                <text x="{{ hour_label.x_pos }}" y="{{ x_label_y }}" class="axis-label">{{ hour_label.label }}</text>
+                {% endfor %}
+            </g>
+
+            <!-- X-axis only (y-axis removed) -->
+            <line x1="{{ padding }}" y1="{{ y_axis_end }}" x2="{{ x_axis_end }}" y2="{{ y_axis_end }}" class="axis"/>
+
+            <!-- UV index shaded area (secondary y-axis, no line) -->
+            <path d="{{ uv_path_data }}" class="uv-area"/>
+
+            <!-- Chart line -->
+            <path d="{{ path_data }}" class="chart-line"/>
+
+            <!-- Precipitation probability dotted line (third y-axis) -->
+            {% if precip_path_data %}
+            <path d="{{ precip_path_data }}" class="precip-line"/>
+            {% endif %}
+
+            <!-- Min temperature label -->
+            <text x="{{ min_temp_label.x }}" y="{{ min_temp_label.y }}" class="temp-label">{{ min_temp_label.temp }}°F</text>
+
+            <!-- Max temperature label -->
+            <text x="{{ max_temp_label.x }}" y="{{ max_temp_label.y }}" class="temp-label">{{ max_temp_label.temp }}°F</text>
+
+            <!-- Peak UV index label -->
+            <text x="{{ peak_uv_label.x }}" y="{{ peak_uv_label.y }}" class="uv-label">{{ peak_uv_label.uv_index }} UV</text>
+
+            <!-- Weekly Forecast Chart -->
+            {% if weekly_chart_data %}
+            <!-- Weekly chart x-axis -->
+            <line x1="{{ weekly_padding }}" y1="{{ weekly_y_axis_end }}" x2="{{ x_axis_end }}" y2="{{ weekly_y_axis_end }}" class="axis"/>
+
+            <!-- Candlestick bars for each day -->
+            {% for day in weekly_chart_data %}
+            <!-- Candlestick line (connects low to high) -->
+            <line x1="{{ day.x_pos }}" y1="{{ day.low_y }}" x2="{{ day.x_pos }}" y2="{{ day.high_y }}" class="candlestick-line"/>
+
+            <!-- Low temp box -->
+            <rect x="{{ day.low_box_x }}" y="{{ day.low_box_y }}" width="{{ day.candle_width }}" height="6" class="candlestick-box"/>
+
+            <!-- High temp box -->
+            <rect x="{{ day.high_box_x }}" y="{{ day.high_box_y }}" width="{{ day.candle_width }}" height="6" class="candlestick-box"/>
+
+            <!-- Low temperature label -->
+            <text x="{{ day.x_pos }}" y="{{ day.low_label_y }}" class="weekly-temp-label">{{ day.low_temp }}°F</text>
+
+            <!-- High temperature label -->
+            <text x="{{ day.x_pos }}" y="{{ day.high_label_y }}" class="weekly-temp-label">{{ day.high_temp }}°F</text>
+
+            <!-- Day label -->
+            <text x="{{ day.x_pos }}" y="{{ day.day_label_y }}" class="day-label">{{ day.day_name }}</text>
+            {% endfor %}
+            {% endif %}
+        </svg>
+    </div>
+</body>
+</html>

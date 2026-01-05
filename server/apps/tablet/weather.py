@@ -663,7 +663,7 @@ weather_codes = {
 }
 
 
-def get_hourly_forecast(latitude: float, longitude: float, api_key: str, hours: int = 48, timezone: str = 'America/New_York') -> Optional[List[Dict]]:
+def get_hourly_forecast(latitude: float, longitude: float, api_key: str, timezone: str = 'America/New_York') -> Optional[List[Dict]]:
     """
     Get hourly weather forecast for the next specified hours using Tomorrow.io API.
 
@@ -690,8 +690,7 @@ def get_hourly_forecast(latitude: float, longitude: float, api_key: str, hours: 
             'units': 'imperial',
             'timesteps': ['1h'],
             'startTime': 'now',
-            'endTime': 'nowPlus5d',
-            'dailyStartHour': 6,
+            'endTime': 'nowPlus1d',
             'timezone': timezone,
             'apikey': api_key
         }
@@ -848,90 +847,6 @@ def get_weekly_forecast(latitude: float, longitude: float, api_key: str, timezon
         return None
     except (KeyError, ValueError) as e:
         print(f"Error parsing weekly forecast response: {e}")
-        return None
-
-
-def get_current_weather(latitude: float, longitude: float, api_key: str, timezone: str = 'America/New_York') -> Optional[Dict]:
-    """
-    Get current weather conditions including UV index using Tomorrow.io API.
-
-    Args:
-        latitude: Latitude coordinate
-        longitude: Longitude coordinate
-        api_key: Tomorrow.io API key
-
-    Returns:
-        Current weather data or None if error
-    """
-    try:
-        # Tomorrow.io Timelines API endpoint for current conditions
-        url = "https://api.tomorrow.io/v4/timelines"
-        params = {
-            'location': f"{latitude},{longitude}",
-            'fields': [
-                'temperature', 'weatherCode', 'uvIndex', 'precipitationProbability', 'precipitationType',
-                'temperatureApparent', 'humidity', 'windSpeed', 'windDirection',
-                'windGust', 'visibility', 'pressureSeaLevel', 'cloudCover',
-                'sunriseTime', 'sunsetTime'
-            ],
-            'units': 'imperial',
-            'timesteps': ['1h'],
-            'startTime': 'now',
-            'endTime': 'nowPlus5d',
-            'timezone': timezone,
-            'apikey': api_key
-        }
-
-        response = requests.get(url, params=params, timeout=15)
-        response.raise_for_status()
-
-        data = response.json()
-
-        # Extract current interval from the timeline
-        timelines = data.get('data', {}).get('timelines', [])
-        if not timelines or not timelines[0].get('intervals'):
-            print("No current weather data found in Tomorrow.io response")
-            return None
-
-        current_interval = timelines[0]['intervals'][0]
-        start_time = current_interval.get('startTime', '')
-        values = current_interval.get('values', {})
-
-        # Parse the ISO timestamp
-        dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-
-        # Map weather code to description
-        weather_code = values.get('weatherCode', 1000)
-        weather_desc = _get_weather_description(weather_code)
-
-        formatted_current = {
-            'datetime': dt.isoformat(),
-            'temperature': round(values.get('temperature', 0)),
-            'temperature_unit': 'F',
-            'feels_like': round(values.get('temperatureApparent', 0)),
-            'humidity': values.get('humidity'),
-            'pressure': values.get('pressureSeaLevel'),
-            'wind_speed': f"{values.get('windSpeed', 0)} mph",
-            'wind_direction': values.get('windDirection'),
-            'wind_gust': values.get('windGust'),
-            'visibility': values.get('visibility'),
-            'uv_index': values.get('uvIndex', 0),
-            'clouds': values.get('cloudCover'),
-            'short_forecast': weather_desc.get('main', ''),
-            'detailed_forecast': weather_desc.get('description', ''),
-            'precipitation_type': _get_precipitation_type(values.get('precipitationType', 0)),
-            'icon': _get_weather_icon(weather_code),
-            'sunrise': values.get('sunriseTime', ''),
-            'sunset': values.get('sunsetTime', '')
-        }
-
-        return formatted_current
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching current weather: {e}")
-        return None
-    except (KeyError, ValueError) as e:
-        print(f"Error parsing current weather response: {e}")
         return None
 
 
