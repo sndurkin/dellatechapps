@@ -30,6 +30,25 @@ REFRESH_URL = "https://login2.herecomesthebus.com/Map.aspx/RefreshMap"
 OUTPUT_DIR = os.path.join(settings.BASE_DIR, "bus_output")
 
 
+def safe_cookies_to_dict(cookie_jar):
+    """
+    Safely convert a requests cookie jar to a dictionary, handling duplicate cookie names.
+
+    When multiple cookies exist with the same name (but different domains/paths),
+    this function will keep the last one encountered, avoiding CookieConflictError.
+
+    Args:
+        cookie_jar: requests.cookies.RequestsCookieJar object
+
+    Returns:
+        dict: Dictionary of cookie name -> value pairs
+    """
+    cookies_dict = {}
+    for cookie in cookie_jar:
+        cookies_dict[cookie.name] = cookie.value
+    return cookies_dict
+
+
 def ensure_output_dir():
     """
     Ensure the output directory exists, creating it if necessary.
@@ -171,7 +190,6 @@ def extract_form_data(html_content, base_url=LOGIN_URL):
         '__VIEWSTATE': '',
         '__VIEWSTATEGENERATOR': '',
         '__EVENTVALIDATION': '',
-
     }
 
     # Extract all input fields from the form
@@ -262,7 +280,6 @@ def extract_map_form_data(html_content, passenger_name):
             if option_text in time_of_day_values:
                 time_of_day_values[option_text] = option.get('value')
                 print(f"Found time with value: {option_text}")
-                break
 
     return passenger_value, time_of_day_values
 
@@ -275,7 +292,7 @@ def parse_bus_data_code(bus_data):
         bus_data: Dictionary containing the bus response data with 'd' field
 
     Returns:
-        Dictionary with parsed properties: lat, lon, bus_number, last_update_dt
+        Dictionary with parsed properties: lat, lon, bus_number, last_update_dt (ISO string)
         Returns None values for properties that couldn't be parsed
     """
     if not bus_data or 'd' not in bus_data:
@@ -313,7 +330,8 @@ def parse_bus_data_code(bus_data):
     m = re.search(r'(\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[AP]M)', cleaned_js_code)
     if m:
         try:
-            last_update_dt = datetime.datetime.strptime(m.group(1), "%m-%d-%y %I:%M %p")
+            parsed_dt = datetime.datetime.strptime(m.group(1), "%m-%d-%y %I:%M %p")
+            last_update_dt = parsed_dt.isoformat()  # Convert to ISO string for JSON serialization
             logger.debug(f'Parsed last update: {last_update_dt}')
         except ValueError as e:
             logger.warning(f'Failed to parse datetime "{m.group(1)}": {e}')
@@ -348,7 +366,7 @@ def refresh_map_with_session_restore(bus_session):
         bus_data = refresh_map(bus_session, requests_session)
 
         # Update stored cookies in case they changed
-        bus_session.cookies_data = dict(requests_session.cookies)
+        bus_session.cookies_data = safe_cookies_to_dict(requests_session.cookies)
         bus_session.save()
 
         return bus_data
@@ -381,7 +399,7 @@ def refresh_map_with_session_restore(bus_session):
             passenger_value, time_of_day_values = extract_map_form_data(login_response, credentials['passenger'])
 
             # Update session with new data
-            bus_session.cookies_data = dict(requests_session.cookies)
+            bus_session.cookies_data = safe_cookies_to_dict(requests_session.cookies)
             bus_session.passenger_value = passenger_value
             bus_session.time_of_day_values = time_of_day_values
             bus_session.save()
@@ -390,7 +408,7 @@ def refresh_map_with_session_restore(bus_session):
             bus_data = refresh_map(bus_session, requests_session)
 
             # Update stored cookies again
-            bus_session.cookies_data = dict(requests_session.cookies)
+            bus_session.cookies_data = safe_cookies_to_dict(requests_session.cookies)
             bus_session.save()
 
             return bus_data
@@ -558,7 +576,7 @@ def create_bus_session(session_key):
         # Step 5: Create and save bus session
         bus_session = BusSession.objects.create(
             session_key=session_key,
-            cookies_data=dict(requests_session.cookies),
+            cookies_data=safe_cookies_to_dict(requests_session.cookies),
             passenger_name=credentials['passenger'],
             passenger_value=passenger_value,
             time_of_day_values=time_of_day_values,
@@ -690,7 +708,7 @@ def get_bus_info(session_key):
         bus_data = refresh_map(bus_session, requests_session)
 
         # Update stored cookies in case they changed
-        bus_session.cookies_data = dict(requests_session.cookies)
+        bus_session.cookies_data = safe_cookies_to_dict(requests_session.cookies)
         bus_session.save()
 
         return bus_data

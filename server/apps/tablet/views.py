@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
@@ -10,6 +10,7 @@ import os
 from .fetch_bus_info import get_bus_info, get_latest_bus_data, invalidate_bus_session, refresh_map_with_session_restore, create_bus_session
 from .models import BusSession, BusData
 from .bus_image_renderer import render_icon_at_coordinates
+from .weather import get_hourly_forecast, get_weekly_forecast, get_current_weather
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ def bus_view(request):
 
     Query parameters:
     - key: Required. Must match BUS_KEY environment variable.
+    - include_image: Optional. If 'true', returns BMP image response instead of JSON when location data is available.
     """
     key = request.GET.get('key')
 
@@ -73,9 +75,9 @@ def bus_view(request):
         logger.info(f"Refreshing bus data for session: {bus_session.session_key}")
         bus_data = refresh_map_with_session_restore(bus_session)
 
-        response_data = None
+        parsed_bus_data = None
         try:
-            response_data = json.loads(bus_data.response_text)
+            parsed_bus_data = json.loads(bus_data.response_text)
         except:
             pass
 
@@ -83,7 +85,7 @@ def bus_view(request):
         response_data = {
             'success': True,
             'timestamp': bus_data.created_at.isoformat(),
-            'bus_data': response_data,
+            'bus_data': parsed_bus_data,
             'request_successful': bus_data.request_successful
         }
 
@@ -91,9 +93,21 @@ def bus_view(request):
         if bus_data.bus_location:
             response_data['location'] = bus_data.bus_location
             if bus_data.bus_location.get('lat') is not None:
-                map_image_path = render_icon_at_coordinates(bus_data.bus_location['lat'], bus_data.bus_location['lon'], None)
-                if map_image_path:
-                    response_data['map_image'] = map_image_path
+                # Check if client wants image data
+                if request.GET.get('include_image') == 'true':
+                    map_image_bytes = render_icon_at_coordinates(
+                        bus_data.bus_location['lat'],
+                        bus_data.bus_location['lon'],
+                        return_bytes=True
+                    )
+                    if map_image_bytes:
+                        # Return image directly as BMP response
+                        response = HttpResponse(map_image_bytes, content_type='image/bmp')
+                        response['Content-Disposition'] = f'inline; filename="bus_map_{bus_data.bus_location["lat"]}_{bus_data.bus_location["lon"]}.bmp"'
+                        return response
+                else:
+                    # Legacy behavior: indicate map is available
+                    response_data['map_available'] = True
 
         # Add error message if request was not successful
         if not bus_data.request_successful and bus_data.error_message:
@@ -110,7 +124,7 @@ def bus_view(request):
         }, status=500)
 
     except Exception as e:
-        logger.error(f"Error in bus view for key {key}: {e}")
+        logger.error(f"Error in bus view for key {key}", e)
         return JsonResponse({
             'error': 'Failed to fetch bus information',
             'details': str(e)
@@ -211,10 +225,9 @@ def render_bus_view(request):
     Query parameters:
     - lat: Required. Latitude coordinate (float)
     - lon: Required. Longitude coordinate (float)
-    - filename: Optional. Custom output filename for the rendered image
 
     Returns:
-    - JSON response with success status and image path, or error details
+    - BMP image response with the rendered bus icon, or JSON error response if coordinates are invalid
     """
     try:
         # Get lat/lon from query parameters
@@ -237,17 +250,14 @@ def render_bus_view(request):
                 'details': 'lat and lon must be valid floating point numbers'
             }, status=400)
 
-        # Call the render function
-        result_path = render_icon_at_coordinates(lat, lon, custom_filename)
+        # Call the render function to get image bytes
+        image_bytes = render_icon_at_coordinates(lat, lon, return_bytes=True)
 
-        if result_path:
-            return JsonResponse({
-                'success': True,
-                'lat': lat,
-                'lon': lon,
-                'image_path': result_path,
-                'message': f'Icon rendered successfully at coordinates ({lat}, {lon})'
-            })
+        if image_bytes:
+            # Return image directly as BMP response
+            response = HttpResponse(image_bytes, content_type='image/bmp')
+            response['Content-Disposition'] = f'inline; filename="bus_map_{lat}_{lon}.bmp"'
+            return response
         else:
             return JsonResponse({
                 'success': False,
@@ -261,5 +271,105 @@ def render_bus_view(request):
         logger.error(f"Error rendering bus icon: {e}")
         return JsonResponse({
             'error': 'Failed to render bus icon',
+            'details': str(e)
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+def weather_view(request):
+    """
+    Get weather information including current conditions, hourly forecast, and weekly forecast.
+    All forecasts include UV index data using Tomorrow.io API.
+
+    Query parameters:
+    - lat: Required. Latitude coordinate (float)
+    - lon: Required. Longitude coordinate (float)
+    - hours: Optional. Number of hours for hourly forecast (default 24, max 120)
+    - forecast_type: Optional. Type of forecast to return: 'current', 'hourly', 'weekly', or 'all' (default 'all')
+    """
+    try:
+        # Get Tomorrow.io API key from environment
+        api_key = os.getenv('TOMORROW_IO_API_KEY')
+        if not api_key:
+            return JsonResponse({
+                'error': 'Weather service configuration error',
+                'details': 'Tomorrow.io API key not configured'
+            }, status=500)
+
+        # Get lat/lon from query parameters
+        lat_str = request.GET.get('lat')
+        lon_str = request.GET.get('lon')
+
+        if not lat_str or not lon_str:
+            return JsonResponse({
+                'error': 'Missing required parameters',
+                'details': 'Both lat and lon parameters are required'
+            }, status=400)
+
+        try:
+            lat = float(lat_str)
+            lon = float(lon_str)
+        except ValueError:
+            return JsonResponse({
+                'error': 'Invalid coordinate format',
+                'details': 'lat and lon must be valid floating point numbers'
+            }, status=400)
+
+        # Get optional parameters
+        hours = int(request.GET.get('hours', 24))
+        hours = min(max(hours, 1), 120)  # Clamp between 1 and 120 (5 days max for free tier)
+
+        forecast_type = request.GET.get('forecast_type', 'all').lower()
+        valid_types = ['current', 'hourly', 'weekly', 'all']
+        if forecast_type not in valid_types:
+            return JsonResponse({
+                'error': 'Invalid forecast_type',
+                'details': f'forecast_type must be one of: {", ".join(valid_types)}'
+            }, status=400)
+
+        response_data = {
+            'success': True,
+            'coordinates': {
+                'lat': lat,
+                'lon': lon
+            }
+        }
+
+        # Get current weather if requested
+        if forecast_type in ['current', 'all']:
+            current_weather = get_current_weather(lat, lon, api_key)
+            if current_weather:
+                response_data['current'] = current_weather
+            else:
+                response_data['current_error'] = 'Failed to fetch current weather'
+
+        # Get hourly forecast if requested
+        if forecast_type in ['hourly', 'all']:
+            hourly_forecast = get_hourly_forecast(lat, lon, api_key, hours)
+            if hourly_forecast:
+                response_data['hourly'] = {
+                    'hours_requested': hours,
+                    'forecast': hourly_forecast
+                }
+            else:
+                response_data['hourly_error'] = 'Failed to fetch hourly forecast'
+
+        # Get weekly forecast if requested
+        if forecast_type in ['weekly', 'all']:
+            weekly_forecast = get_weekly_forecast(lat, lon, api_key)
+            if weekly_forecast:
+                response_data['weekly'] = {
+                    'days': len(weekly_forecast),
+                    'forecast': weekly_forecast
+                }
+            else:
+                response_data['weekly_error'] = 'Failed to fetch weekly forecast'
+
+        return JsonResponse(response_data)
+
+    except Exception as e:
+        logger.error(f"Error in weather view", e)
+        return JsonResponse({
+            'error': 'Failed to fetch weather information',
             'details': str(e)
         }, status=500)

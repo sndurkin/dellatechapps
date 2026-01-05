@@ -7,7 +7,7 @@ class BusSessionAdmin(admin.ModelAdmin):
     pass
 
 class BusDataAdmin(admin.ModelAdmin):
-    list_display = ('session', 'bus_location', 'error_message')
+    list_display = ('session', 'created_at', 'bus_location', 'error_message')
 
 admin.site.register(BusSession, BusSessionAdmin)
 admin.site.register(BusData, BusDataAdmin)

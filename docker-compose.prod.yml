@@ -56,9 +56,37 @@ services:
       web:
         condition: service_healthy
 
+  cron:
+    image: sndurkin/dellatechapps:latest
+    networks:
+      - web-db
+    environment:
+      - DEBUG=False
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    env_file:
+      - .env
+    volumes:
+      - ./crontab:/etc/cron.d/bus-data-cleanup
+      - cron_logs:/var/log
+    command: >
+      sh -c "
+        apt-get update && apt-get install -y cron &&
+        chmod 0644 /etc/cron.d/bus-data-cleanup &&
+        crontab /etc/cron.d/bus-data-cleanup &&
+        cron -f
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   static_files:
+  cron_logs:
 
 networks:
   nginx-web:
