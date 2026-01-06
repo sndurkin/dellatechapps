@@ -358,18 +358,20 @@ def weather_view(request):
                 hour_labels.append('')
 
         # Calculate chart dimensions
-        chart_width = 800
-        chart_height = 480  # Total height exactly 480px
+        total_width = 800
+        total_height = 480  # Total height exactly 480px
         x_axis_label_height = 30  # Space for x-axis labels
-        hourly_chart_height = 240  # Hourly chart height (half of total)
-        weekly_chart_height = 240  # Weekly chart height (half of total)
+        hourly_chart_height = 230  # Hourly chart height (half of total)
+        weekly_chart_height = 230  # Weekly chart height (half of total)
+        chart_margin_y = total_height - hourly_chart_height - weekly_chart_height
         hourly_padding_width = 20
-        plot_width = chart_width - 2 * hourly_padding_width
+        plot_width = total_width - 2 * hourly_padding_width
         # Plot height is chart height minus x-axis label space
         plot_height = hourly_chart_height - x_axis_label_height  # 210px for hourly chart
 
         # Calculate derived values needed for chart generation
-        x_axis_end = chart_width - hourly_padding_width
+        x_axis_start = 0
+        x_axis_end = total_width
         hourly_chart_offset_y = 0  # No title, starts at top
         y_axis_end = hourly_chart_offset_y + plot_height  # End of plot area
 
@@ -485,12 +487,12 @@ def weather_view(request):
 
         # Process weekly forecast data for second chart
         weekly_chart_data = []
-        weekly_padding_width = 20
-        weekly_plot_padding_height = 20
-        weekly_plot_height = weekly_chart_height - x_axis_label_height - 2 * weekly_plot_padding_height
-        weekly_plot_width = chart_width - 2 * weekly_padding_width
+        weekly_plot_padding_x = 40
+        weekly_plot_padding_y = 20
+        weekly_plot_height = weekly_chart_height - x_axis_label_height - (2 * weekly_plot_padding_y)
+        weekly_plot_width = total_width - (2 * weekly_plot_padding_x)
         # Weekly chart starts after hourly chart
-        weekly_chart_offset_y = hourly_chart_height
+        weekly_chart_offset_y = hourly_chart_height + weekly_plot_padding_y + chart_margin_y
 
         if weekly_forecast:
             # Find min and max temps across all days for scaling
@@ -518,21 +520,21 @@ def weather_view(request):
 
                 if low_temp is not None and high_temp is not None:
                     # Calculate x position (centered in each day's slot)
-                    x_pos = weekly_padding_width + (i / (len(weekly_forecast) - 1)) * weekly_plot_width if len(weekly_forecast) > 1 else weekly_padding_width + weekly_plot_width / 2
+                    x_pos = weekly_plot_padding_x + (i / (len(weekly_forecast) - 1)) * weekly_plot_width if len(weekly_forecast) > 1 else weekly_plot_padding_x + weekly_plot_width / 2
 
                     # Calculate y positions (invert y-axis) - add offset for second chart
                     low_y = weekly_chart_offset_y + weekly_plot_height - ((low_temp - weekly_min_temp) / weekly_temp_range) * weekly_plot_height
                     high_y = weekly_chart_offset_y + weekly_plot_height - ((high_temp - weekly_min_temp) / weekly_temp_range) * weekly_plot_height
 
-                    # Candlestick width
-                    candle_width = 20
+                    # Pill shape dimensions (Apple-style)
+                    pill_width = 24
+                    pill_half_width = pill_width / 2
+                    pill_height = abs(high_y - low_y)
 
-                    # Calculate candlestick box positions
-                    candle_half_width = candle_width / 2
-                    low_box_x = x_pos - candle_half_width
-                    high_box_x = x_pos - candle_half_width
-                    low_box_y = low_y - 3
-                    high_box_y = high_y - 3
+                    # Pill position (centered on x_pos, spanning from low_y to high_y)
+                    pill_x = x_pos - pill_half_width
+                    pill_y = min(low_y, high_y)  # Use min since SVG y increases downward
+                    pill_radius = pill_half_width  # Fully rounded ends for pill shape
 
                     weekly_chart_data.append({
                         'day_name': day_name,
@@ -541,21 +543,22 @@ def weather_view(request):
                         'high_temp': int(round(high_temp)),
                         'low_y': low_y,
                         'high_y': high_y,
-                        'candle_width': candle_width,
-                        'low_box_x': low_box_x,
-                        'low_box_y': low_box_y,
-                        'high_box_x': high_box_x,
-                        'high_box_y': high_box_y,
-                        'low_label_y': low_y + 15,  # Label below the low point
-                        'high_label_y': high_y - 8,  # Label above the high point
-                        'day_label_y': weekly_chart_offset_y + weekly_chart_height - x_axis_label_height + 15,  # Day label in x-axis area
+                        'pill_x': pill_x,
+                        'pill_y': pill_y,
+                        'pill_width': pill_width,
+                        'pill_height': pill_height,
+                        'pill_radius': pill_radius,
+                        'low_label_y': low_y + 20,  # Label below the low point
+                        'high_label_y': high_y - 5,  # Label above the high point
+                        'day_label_y': weekly_chart_offset_y + weekly_plot_height + (x_axis_label_height * 1.5),
                     })
 
         # Prepare context for template
         context = {
-            'chart_width': chart_width,
-            'chart_height': chart_height,
+            'chart_width': total_width,
+            'chart_height': total_height,
             'padding': hourly_padding_width,
+            'x_axis_start': x_axis_start,
             'x_axis_end': x_axis_end,
             'y_axis_end': y_axis_end,
             'y_label_x': y_label_x,
@@ -570,8 +573,8 @@ def weather_view(request):
             'precip_path_data': precip_path_data,
             'weekly_chart_data': weekly_chart_data,
             'weekly_chart_height': weekly_chart_height,
-            'weekly_padding': weekly_padding_width,
-            'weekly_y_axis_end': weekly_chart_offset_y + weekly_plot_height,
+            'weekly_padding': weekly_plot_padding_x,
+            'weekly_y_axis_end': weekly_chart_offset_y + weekly_plot_height + x_axis_label_height,
             'weekly_chart_offset_y': weekly_chart_offset_y,
             'x_axis_label_height': x_axis_label_height,
         }

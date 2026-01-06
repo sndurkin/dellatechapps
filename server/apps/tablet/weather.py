@@ -1,7 +1,9 @@
 import requests
 import json
+import os
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
+
 
 
 weather_codes = {
@@ -663,9 +665,31 @@ weather_codes = {
 }
 
 
+def _load_test_data() -> Optional[Dict]:
+    """
+    Load test data from test_data.json if it exists.
+
+    Returns:
+        Dictionary containing test data or None if file doesn't exist
+    """
+    # Get the directory where this file is located
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    test_data_path = os.path.join(current_dir, 'assets', 'test_data.json')
+
+    if os.path.exists(test_data_path):
+        try:
+            with open(test_data_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Error loading test data from {test_data_path}: {e}")
+            return None
+    return None
+
+
 def get_hourly_forecast(latitude: float, longitude: float, api_key: str, timezone: str = 'America/New_York') -> Optional[List[Dict]]:
     """
     Get hourly weather forecast for the next specified hours using Tomorrow.io API.
+    If test_data.json exists, it will be used instead of making API requests.
 
     Args:
         latitude: Latitude coordinate
@@ -676,6 +700,16 @@ def get_hourly_forecast(latitude: float, longitude: float, api_key: str, timezon
     Returns:
         List of hourly forecast periods or None if error
     """
+    # Check if test data exists and use it instead of API
+    test_data = _load_test_data()
+    if test_data and test_data.get('success') and 'hourly' in test_data:
+        hourly_data = test_data.get('hourly', {})
+        forecast = hourly_data.get('forecast', [])
+        if forecast:
+            print(f"Using test data for hourly forecast ({len(forecast)} hours)")
+            return forecast
+
+    # Fall back to API if test data not available
     try:
         # Tomorrow.io Timelines API endpoint
         url = "https://api.tomorrow.io/v4/timelines"
@@ -754,6 +788,7 @@ def get_hourly_forecast(latitude: float, longitude: float, api_key: str, timezon
 def get_weekly_forecast(latitude: float, longitude: float, api_key: str, timezone: str = 'America/New_York') -> Optional[List[Dict]]:
     """
     Get 5-day weather forecast with high/low temperatures, conditions, and UV index using Tomorrow.io API.
+    If test_data.json exists, it will be used instead of making API requests.
 
     Args:
         latitude: Latitude coordinate
@@ -763,6 +798,16 @@ def get_weekly_forecast(latitude: float, longitude: float, api_key: str, timezon
     Returns:
         List of daily forecast periods or None if error
     """
+    # Check if test data exists and use it instead of API
+    test_data = _load_test_data()
+    if test_data and test_data.get('success') and 'weekly' in test_data:
+        weekly_data = test_data.get('weekly', {})
+        forecast = weekly_data.get('forecast', [])
+        if forecast:
+            print(f"Using test data for weekly forecast ({len(forecast)} days)")
+            return forecast
+
+    # Fall back to API if test data not available
     try:
         # Tomorrow.io Timelines API endpoint
         url = "https://api.tomorrow.io/v4/timelines"

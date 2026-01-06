@@ -72,18 +72,13 @@
             stroke-width: 1.5;
             stroke-dasharray: 4,4;
         }
-        .candlestick-line {
-            stroke: #000;
-            stroke-width: 2;
-        }
-        .candlestick-box {
-            fill: #fff;
-            stroke: #000;
-            stroke-width: 2;
+        .pill-shape {
+            fill: #000;
+            stroke: none;
         }
         .weekly-temp-label {
             fill: #000;
-            font-size: 10px;
+            font-size: 1em;
             font-weight: bold;
             text-anchor: middle;
         }
@@ -103,7 +98,7 @@
             <!-- Grid lines -->
             <g id="y-axis">
                 {% for grid_line in grid_lines %}
-                <line x1="{{ padding }}" y1="{{ grid_line.y_pos }}" x2="{{ x_axis_end }}" y2="{{ grid_line.y_pos }}" class="grid-line"/>
+                <line x1="{{ x_axis_start }}" y1="{{ grid_line.y_pos }}" x2="{{ x_axis_end }}" y2="{{ grid_line.y_pos }}" class="grid-line"/>
                 {% endfor %}
             </g>
 
@@ -115,7 +110,7 @@
             </g>
 
             <!-- X-axis only (y-axis removed) -->
-            <line x1="{{ padding }}" y1="{{ y_axis_end }}" x2="{{ x_axis_end }}" y2="{{ y_axis_end }}" class="axis"/>
+            <line x1="{{ x_axis_start }}" y1="{{ y_axis_end }}" x2="{{ x_axis_end }}" y2="{{ y_axis_end }}" class="axis"/>
 
             <!-- UV index shaded area (secondary y-axis, no line) -->
             <path d="{{ uv_path_data }}" class="uv-area"/>
@@ -138,20 +133,15 @@
             <text x="{{ peak_uv_label.x }}" y="{{ peak_uv_label.y }}" class="uv-label">{{ peak_uv_label.uv_index }} UV</text>
 
             <!-- Weekly Forecast Chart -->
+
             {% if weekly_chart_data %}
             <!-- Weekly chart x-axis -->
-            <line x1="{{ weekly_padding }}" y1="{{ weekly_y_axis_end }}" x2="{{ x_axis_end }}" y2="{{ weekly_y_axis_end }}" class="axis"/>
+            <line x1="{{ x_axis_start }}" y1="{{ weekly_y_axis_end }}" x2="{{ x_axis_end }}" y2="{{ weekly_y_axis_end }}" class="axis"/>
 
-            <!-- Candlestick bars for each day -->
+            <!-- Pill shapes for each day -->
             {% for day in weekly_chart_data %}
-            <!-- Candlestick line (connects low to high) -->
-            <line x1="{{ day.x_pos }}" y1="{{ day.low_y }}" x2="{{ day.x_pos }}" y2="{{ day.high_y }}" class="candlestick-line"/>
-
-            <!-- Low temp box -->
-            <rect x="{{ day.low_box_x }}" y="{{ day.low_box_y }}" width="{{ day.candle_width }}" height="6" class="candlestick-box"/>
-
-            <!-- High temp box -->
-            <rect x="{{ day.high_box_x }}" y="{{ day.high_box_y }}" width="{{ day.candle_width }}" height="6" class="candlestick-box"/>
+            <!-- Pill shape (Apple-style rounded rectangle spanning from low to high) -->
+            <rect x="{{ day.pill_x }}" y="{{ day.pill_y }}" width="{{ day.pill_width }}" height="{{ day.pill_height }}" rx="{{ day.pill_radius }}" ry="{{ day.pill_radius }}" class="pill-shape"/>
 
             <!-- Low temperature label -->
             <text x="{{ day.x_pos }}" y="{{ day.low_label_y }}" class="weekly-temp-label">{{ day.low_temp }}°F</text>
