@@ -31,16 +31,15 @@ def bus_view(request):
 
     Query parameters:
     - key: Required. Must match BUS_KEY environment variable.
-    - include_image: Optional. If 'true', returns BMP image response instead of JSON when location data is available.
+    - debug: Optional. If 'true', returns JSON location data instead of BMP image response.
     """
+    # Check if key is provided and matches TABLET_KEY environment variable
     key = request.GET.get('key')
-
-    # Check if key is provided and matches BUS_KEY environment variable
     if not key:
         return JsonResponse({'error': 'Not found'}, status=404)
 
-    bus_key = os.getenv('BUS_KEY')
-    if not bus_key or key != bus_key:
+    tablet_key = os.getenv('TABLET_KEY')
+    if not tablet_key or key != tablet_key:
         return JsonResponse({'error': 'Not found'}, status=404)
 
     try:
@@ -95,7 +94,9 @@ def bus_view(request):
             response_data['location'] = bus_data.bus_location
             if bus_data.bus_location.get('lat') is not None:
                 # Check if client wants image data
-                if request.GET.get('include_image') == 'true':
+                if request.GET.get('debug') == 'true':
+                    response_data['map_available'] = True
+                else:
                     map_image_bytes = render_icon_at_coordinates(
                         bus_data.bus_location['lat'],
                         bus_data.bus_location['lon'],
@@ -106,9 +107,6 @@ def bus_view(request):
                         response = HttpResponse(map_image_bytes, content_type='image/bmp')
                         response['Content-Disposition'] = f'inline; filename="bus_map_{bus_data.bus_location["lat"]}_{bus_data.bus_location["lon"]}.bmp"'
                         return response
-                else:
-                    # Legacy behavior: indicate map is available
-                    response_data['map_available'] = True
 
         # Add error message if request was not successful
         if not bus_data.request_successful and bus_data.error_message:
@@ -287,6 +285,15 @@ def weather_view(request):
     - lat: Required. Latitude coordinate (float)
     - lon: Required. Longitude coordinate (float)
     """
+    # Check if key is provided and matches TABLET_KEY environment variable
+    key = request.GET.get('key')
+    if not key:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    tablet_key = os.getenv('TABLET_KEY')
+    if not tablet_key or key != tablet_key:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
     try:
         # Get Tomorrow.io API key from environment
         api_key = os.getenv('TOMORROW_IO_API_KEY')
