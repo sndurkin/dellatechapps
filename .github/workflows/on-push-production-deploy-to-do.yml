@@ -46,6 +46,16 @@ jobs:
         target: /etc/nginx/
         timeout: 120s
 
+    - name: ensure assets directory exists on droplet
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.DROPLET_HOST }}
+        username: ${{ secrets.DROPLET_USER }}
+        key: ${{ secrets.DROPLET_SSH_KEY }}
+        passphrase: ${{ secrets.DROPLET_SSH_PASSPHRASE }}
+        script: |
+          mkdir -p /var/www/dellatechapps/assets
+
     - name: ssh to droplet and bring up the container
       uses: appleboy/ssh-action@v1.0.3
       with:

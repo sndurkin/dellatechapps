@@ -1,0 +1,3 @@
+# This file ensures the assets folder is tracked in git
+# Actual asset files (image_coords.json, *.png, etc.) are gitignored
+# but will be included in Docker builds if present locally

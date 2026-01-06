@@ -37,6 +37,18 @@ if DEBUG:
     ALLOWED_HOSTS.append("kitchenbuddy.local")
     ALLOWED_HOSTS.append("dellatech.local")
 
+# CSRF trusted origins - required when using HTTPS behind a reverse proxy
+CSRF_TRUSTED_ORIGINS = [
+    "https://dellatech.app",
+    "https://www.dellatech.app",
+]
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS.extend([
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://dellatech.local",
+    ])
+
 # Apparently, this is needed for the Sites framework, which is used for multi-site support.
 SITE_ID = 1
 

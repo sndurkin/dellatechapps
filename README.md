@@ -126,6 +126,15 @@ docker exec -it dellatechapps-db-1 bash
 psql -U postgres
 ```
 
+#### Fixing Collation Version Mismatch
+
+If you see collation version mismatch warnings in the logs, the production setup automatically refreshes the collation version on startup. For manual fixes:
+
+```bash
+# Run the refresh command directly
+docker exec -it dellatechapps-db-1 psql -U postgres -d postgres -c "ALTER DATABASE postgres REFRESH COLLATION VERSION;"
+```
+
 ### Shell Access
 
 Access the web service shell:
@@ -224,6 +233,18 @@ server/apps/tablet/assets/
    ```
 
 **Note:** The `assets` folder is excluded from version control (via `.gitignore`) to prevent committing large image files. Each developer/deployment must provide these files separately.
+
+### Uploading Assets to Production
+
+The asset files in `server/apps/tablet/assets/` are gitignored but required in production.
+
+Upload using scp:
+
+```bash
+scp -r server/apps/tablet/assets/* user@your-droplet:/var/www/dellatechapps/assets/
+```
+
+**Note:** Assets only need to be uploaded once (or when they change). The docker-compose volume mount ensures they persist across container rebuilds.
 
 ## BusData Cleanup - Daily Scheduled Task
 

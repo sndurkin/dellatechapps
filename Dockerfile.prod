@@ -17,6 +17,9 @@ RUN mkdir -p /app/server/static/
 COPY server/web/package*.json server/web/
 RUN cd server/web && npm install
 
+# Copy all application files
+# Note: This includes gitignored files like server/apps/tablet/assets/*.png and image_coords.json
+# These files are excluded from git but will be included in Docker builds if present locally
 COPY . .
 
 EXPOSE 8000

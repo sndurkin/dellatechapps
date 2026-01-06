@@ -5,6 +5,7 @@ services:
       - "8000:8000"
     volumes:
       - static_files:/app/server/static/
+      - ./assets:/app/server/apps/tablet/assets:ro
     networks:
       - nginx-web
       - web-db
