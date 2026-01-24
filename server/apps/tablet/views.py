@@ -8,10 +8,12 @@ import logging
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 from .fetch_bus_info import get_bus_info, get_latest_bus_data, invalidate_bus_session, refresh_map_with_session_restore, create_bus_session
 from .models import BusSession, BusData
 from .bus_image_renderer import render_icon_at_coordinates
 from .weather import get_hourly_forecast, get_weekly_forecast
+from .svg_to_bmp import render_svg_to_bmp
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +109,8 @@ def bus_view(request):
                         response = HttpResponse(map_image_bytes, content_type='image/bmp')
                         response['Content-Disposition'] = f'inline; filename="bus_map_{bus_data.bus_location["lat"]}_{bus_data.bus_location["lon"]}.bmp"'
                         return response
+                    else:
+                        response_data['error_message'] = 'Map could not be rendered as an image'
 
         # Add error message if request was not successful
         if not bus_data.request_successful and bus_data.error_message:
@@ -277,8 +281,8 @@ def render_bus_view(request):
 @require_http_methods(["GET"])
 def weather_view(request):
     """
-    Get weather information and render an HTML chart showing hourly temperature forecast.
-    Returns an HTML page with a grayscale temperature chart (800x480 pixels).
+    Get weather information and render an SVG chart showing hourly temperature forecast.
+    Returns a BMP image (converted from SVG) with a grayscale temperature chart (800x480 pixels).
     Fetches exactly 24 hours of hourly forecast data.
 
     Query parameters:
@@ -338,6 +342,43 @@ def weather_view(request):
         # Get weekly forecast
         weekly_forecast = get_weekly_forecast(lat, lon, api_key)
 
+        # Find current temperature from first or second hourly forecast (whichever is closer to current time)
+        current_time = datetime.now()
+        current_temp = None
+        if hourly_forecast and len(hourly_forecast) >= 2:
+            # Parse first two forecast times
+            try:
+                dt1_str = hourly_forecast[0]['datetime']
+                dt1_str_clean = dt1_str.replace('Z', '+00:00')
+                dt1 = datetime.fromisoformat(dt1_str_clean)
+
+                dt2_str = hourly_forecast[1]['datetime']
+                dt2_str_clean = dt2_str.replace('Z', '+00:00')
+                dt2 = datetime.fromisoformat(dt2_str_clean)
+
+                # Calculate time differences
+                diff1 = abs((dt1 - current_time).total_seconds())
+                diff2 = abs((dt2 - current_time).total_seconds())
+
+                # Use whichever is closer
+                if diff1 <= diff2:
+                    current_temp = hourly_forecast[0]['temperature']
+                else:
+                    current_temp = hourly_forecast[1]['temperature']
+            except Exception as e:
+                logger.warning(f"Failed to parse forecast times for current temp: {e}")
+                # Fallback to first forecast
+                current_temp = hourly_forecast[0].get('temperature')
+        elif hourly_forecast:
+            current_temp = hourly_forecast[0].get('temperature')
+
+        # Format current date (e.g., "Thursday, March 13")
+        current_date_str = current_time.strftime('%A, %B %d')
+
+        # Get current weather icon SVG (placeholder for now - can be enhanced later)
+        # For now, use an empty string or simple SVG icon
+        current_weather_icon_svg = ''  # Can be populated with actual weather icon SVG based on weatherCode
+
         # Extract temperatures, UV index, precipitation probability, and times from forecast
         temperatures = [item['temperature'] for item in hourly_forecast]
         uv_indices = [item.get('uv_index', 0) for item in hourly_forecast]
@@ -365,20 +406,23 @@ def weather_view(request):
                 hour_labels.append('')
 
         # Calculate chart dimensions
-        total_width = 800
+        chart_width = 600  # Charts are now 600px wide
         total_height = 480  # Total height exactly 480px
+        sidebar_width = 200
+        sidebar_height = total_height / 2
+        total_width = sidebar_width + chart_width  # Total width is 800px
         x_axis_label_height = 30  # Space for x-axis labels
         hourly_chart_height = 230  # Hourly chart height (half of total)
         weekly_chart_height = 230  # Weekly chart height (half of total)
         chart_margin_y = total_height - hourly_chart_height - weekly_chart_height
         hourly_padding_width = 20
-        plot_width = total_width - 2 * hourly_padding_width
+        plot_width = chart_width - 2 * hourly_padding_width  # Use chart_width instead of total_width
         # Plot height is chart height minus x-axis label space
         plot_height = hourly_chart_height - x_axis_label_height  # 210px for hourly chart
 
         # Calculate derived values needed for chart generation
-        x_axis_start = 0
-        x_axis_end = total_width
+        x_axis_start = sidebar_width  # Charts start after sidebar
+        x_axis_end = sidebar_width + chart_width  # Charts end at sidebar + chart width
         hourly_chart_offset_y = 0  # No title, starts at top
         y_axis_end = hourly_chart_offset_y + plot_height  # End of plot area
 
@@ -392,7 +436,7 @@ def weather_view(request):
         points = []
         temp_points = []  # Store temp and coordinates for finding min/max
         for i, temp in enumerate(temperatures):
-            x = hourly_padding_width + (i / (len(temperatures) - 1)) * plot_width if len(temperatures) > 1 else hourly_padding_width + plot_width / 2
+            x = sidebar_width + hourly_padding_width + (i / (len(temperatures) - 1)) * plot_width if len(temperatures) > 1 else sidebar_width + hourly_padding_width + plot_width / 2
             # Invert y-axis (SVG y increases downward)
             y = hourly_chart_offset_y + plot_height - ((temp - min_temp) / temp_range) * plot_height
             points.append(f"{x},{y}")
@@ -423,7 +467,7 @@ def weather_view(request):
         uv_points = []
         uv_points_with_data = []
         for i, uv_index in enumerate(uv_indices):
-            x = hourly_padding_width + (i / (len(uv_indices) - 1)) * plot_width if len(uv_indices) > 1 else hourly_padding_width + plot_width / 2
+            x = sidebar_width + hourly_padding_width + (i / (len(uv_indices) - 1)) * plot_width if len(uv_indices) > 1 else sidebar_width + hourly_padding_width + plot_width / 2
             # UV index uses same x positions but different y scale (0-11 mapped to plot_height)
             # Invert y-axis (SVG y increases downward)
             y = hourly_chart_offset_y + plot_height - ((uv_index - uv_min) / uv_range) * plot_height
@@ -431,7 +475,7 @@ def weather_view(request):
             uv_points_with_data.append({'x': x, 'y': y, 'uv_index': uv_index})
 
         # Create UV index area path (shaded area, no line)
-        uv_path_data = f"M {hourly_padding_width},{y_axis_end} "  # Start at bottom-left
+        uv_path_data = f"M {sidebar_width + hourly_padding_width},{y_axis_end} "  # Start at bottom-left
         uv_path_data += f"L {uv_points[0]} "  # Move to first UV point
         uv_path_data += " ".join([f"L {point}" for point in uv_points[1:]])  # Draw line through all UV points
         uv_path_data += f" L {x_axis_end},{y_axis_end} Z"  # Close the path to bottom-right
@@ -456,7 +500,7 @@ def weather_view(request):
         if has_precipitation:
             precip_points = []
             for i, precip_prob in enumerate(precipitation_probabilities):
-                x = hourly_padding_width + (i / (len(precipitation_probabilities) - 1)) * plot_width if len(precipitation_probabilities) > 1 else hourly_padding_width + plot_width / 2
+                x = sidebar_width + hourly_padding_width + (i / (len(precipitation_probabilities) - 1)) * plot_width if len(precipitation_probabilities) > 1 else sidebar_width + hourly_padding_width + plot_width / 2
                 # Precipitation probability uses same x positions but different y scale (0-100 mapped to plot_height)
                 # Invert y-axis (SVG y increases downward)
                 y = hourly_chart_offset_y + plot_height - ((precip_prob - precip_min) / precip_range) * plot_height
@@ -482,14 +526,14 @@ def weather_view(request):
         for i, (label, dt_obj) in enumerate(zip(hour_labels, datetime_objects)):
             # Only show labels for hours divisible by 3 (0, 3, 6, 9, 12, 15, 18, 21)
             if dt_obj is not None and dt_obj.hour % 3 == 0:
-                x_pos = hourly_padding_width + (i / (len(hour_labels) - 1)) * plot_width if len(hour_labels) > 1 else hourly_padding_width + plot_width / 2
+                x_pos = sidebar_width + hourly_padding_width + (i / (len(hour_labels) - 1)) * plot_width if len(hour_labels) > 1 else sidebar_width + hourly_padding_width + plot_width / 2
                 hour_labels_with_pos.append({
                     'label': label,
                     'x_pos': x_pos
                 })
 
         # Calculate remaining derived values for template
-        y_label_x = hourly_padding_width - 10
+        y_label_x = sidebar_width + hourly_padding_width - 10
         x_label_y = y_axis_end + 20
 
         # Process weekly forecast data for second chart
@@ -497,7 +541,7 @@ def weather_view(request):
         weekly_plot_padding_x = 40
         weekly_plot_padding_y = 20
         weekly_plot_height = weekly_chart_height - x_axis_label_height - (2 * weekly_plot_padding_y)
-        weekly_plot_width = total_width - (2 * weekly_plot_padding_x)
+        weekly_plot_width = chart_width - (2 * weekly_plot_padding_x)  # Use chart_width instead of total_width
         # Weekly chart starts after hourly chart
         weekly_chart_offset_y = hourly_chart_height + weekly_plot_padding_y + chart_margin_y
 
@@ -526,8 +570,8 @@ def weather_view(request):
                 high_temp = day.get('high_temp')
 
                 if low_temp is not None and high_temp is not None:
-                    # Calculate x position (centered in each day's slot)
-                    x_pos = weekly_plot_padding_x + (i / (len(weekly_forecast) - 1)) * weekly_plot_width if len(weekly_forecast) > 1 else weekly_plot_padding_x + weekly_plot_width / 2
+                    # Calculate x position (centered in each day's slot) - add sidebar offset
+                    x_pos = sidebar_width + weekly_plot_padding_x + (i / (len(weekly_forecast) - 1)) * weekly_plot_width if len(weekly_forecast) > 1 else sidebar_width + weekly_plot_padding_x + weekly_plot_width / 2
 
                     # Calculate y positions (invert y-axis) - add offset for second chart
                     low_y = weekly_chart_offset_y + weekly_plot_height - ((low_temp - weekly_min_temp) / weekly_temp_range) * weekly_plot_height
@@ -560,10 +604,53 @@ def weather_view(request):
                         'day_label_y': weekly_chart_offset_y + weekly_plot_height + (x_axis_label_height * 1.5),
                     })
 
+        # Set up cache directory and filename
+        # Cache directory: server/apps/tablet/cache/weather_bmp/
+        current_file = Path(__file__).resolve()
+        cache_dir = current_file.parent / 'cache' / 'weather_bmp'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate filename with date and hour (e.g., weather_chart_2024-01-15_14.bmp)
+        # current_time is already defined above
+        date_hour_str = current_time.strftime('%Y-%m-%d_%H')
+        cache_filename = f'weather_chart_{date_hour_str}.bmp'
+        cache_filepath = cache_dir / cache_filename
+
+        # Check if cached file exists for current hour
+        if cache_filepath.exists():
+            try:
+                # Read and return cached file
+                with open(cache_filepath, 'rb') as f:
+                    cached_bmp_bytes = f.read()
+                logger.info(f"Returning cached BMP file: {cache_filename}")
+                response = HttpResponse(cached_bmp_bytes, content_type='image/bmp')
+                response['Content-Disposition'] = f'inline; filename="weather_chart_{lat}_{lon}.bmp"'
+                return response
+            except Exception as e:
+                logger.warning(f"Error reading cached file {cache_filename}: {e}, will regenerate")
+
+        # Check for any existing cached files that don't match current hour and delete them
+        try:
+            for existing_file in cache_dir.glob('weather_chart_*.bmp'):
+                if existing_file.name != cache_filename:
+                    try:
+                        existing_file.unlink()
+                        logger.info(f"Deleted old cached file: {existing_file.name}")
+                    except Exception as e:
+                        logger.warning(f"Error deleting old cached file {existing_file.name}: {e}")
+        except Exception as e:
+            logger.warning(f"Error cleaning up old cache files: {e}")
+
         # Prepare context for template
         context = {
-            'chart_width': total_width,
+            'total_width': total_width,
+            'chart_width': chart_width,
+            'sidebar_width': sidebar_width,
+            'sidebar_height': sidebar_height,
             'chart_height': total_height,
+            'current_temp': int(round(current_temp)) if current_temp is not None else None,
+            'current_date': current_date_str,
+            'current_weather_icon_svg': current_weather_icon_svg,
             'padding': hourly_padding_width,
             'x_axis_start': x_axis_start,
             'x_axis_end': x_axis_end,
@@ -586,7 +673,23 @@ def weather_view(request):
             'x_axis_label_height': x_axis_label_height,
         }
 
-        return render(request, 'tablet/weather_chart.html', context)
+        bmp_bytes = render_svg_to_bmp('tablet/weather_chart.svgt', context, width=int(total_width), height=int(total_height))
+        if bmp_bytes:
+            # Save to cache
+            try:
+                with open(cache_filepath, 'wb') as f:
+                    f.write(bmp_bytes)
+                logger.info(f"Cached BMP file: {cache_filename}")
+            except Exception as e:
+                logger.warning(f"Error saving BMP to cache {cache_filename}: {e}")
+
+            response = HttpResponse(bmp_bytes, content_type='image/bmp')
+            response['Content-Disposition'] = f'inline; filename="weather_chart_{lat}_{lon}.bmp"'
+            return response
+
+        # Fallback to SVG if BMP rendering fails
+        logger.warning("Failed to render SVG to BMP, falling back to SVG")
+        return render(request, 'tablet/weather_chart.svgt', context)
 
     except Exception as e:
         logger.error(f"Error in weather view", e)

@@ -81,9 +81,10 @@ def render_icon_at_coordinates(lat, lon, return_bytes=False):
             draw = ImageDraw.Draw(img_with_icon)
 
             # Load and place pre-made bus icon PNG
+            bus_icon = None
             try:
-                # Load the bus icon from the same directory as this script
-                icon_path = os.path.join(current_dir, "bus_icon.png")
+                # Load the bus icon from the assets directory
+                icon_path = os.path.join(current_dir, "assets", "bus_icon.png")
 
                 if os.path.exists(icon_path):
                     bus_icon = Image.open(icon_path)
@@ -101,8 +102,13 @@ def render_icon_at_coordinates(lat, lon, return_bytes=False):
 
                     # Paste the icon onto the image
                     img_with_icon.paste(bus_icon, (paste_x, paste_y), bus_icon)
+                else:
+                    print(f"Warning: Image file {icon_path} not found")
             except Exception as e:
-                # Fallback: draw a simple white circle with black border if there's any error
+                pass
+
+            # Fallback: draw a simple white circle with black border if there's any error
+            if bus_icon is None:
                 icon_radius = 5
                 draw.ellipse([
                     pixel_x - icon_radius - 1, pixel_y - icon_radius - 1,
