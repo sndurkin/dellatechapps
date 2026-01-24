@@ -120,6 +120,18 @@ def render_icon_at_coordinates(lat, lon, return_bytes=False):
                 ], fill='white', outline='white')
                 print(f"Error loading bus icon: {e}, using fallback circle")
 
+            # Convert to 8-bit palette mode for smaller file size
+            # Convert to RGB first if image has transparency (RGBA)
+            if img_with_icon.mode == 'RGBA':
+                # Create a white background and paste the image onto it
+                rgb_img = Image.new('RGB', img_with_icon.size, (255, 255, 255))
+                rgb_img.paste(img_with_icon, mask=img_with_icon.split()[3])  # Use alpha channel as mask
+                img_with_icon = rgb_img
+            elif img_with_icon.mode != 'RGB':
+                img_with_icon = img_with_icon.convert('RGB')
+            # Now convert to 8-bit palette mode
+            img_with_icon = img_with_icon.convert('P', palette=Image.ADAPTIVE, colors=256)
+
             if return_bytes:
                 # Return image as bytes (BMP format)
                 img_buffer = io.BytesIO()

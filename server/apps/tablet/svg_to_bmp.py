@@ -39,6 +39,8 @@ def render_svg_to_bmp(template_name, context, width=800, height=480):
 
         # Convert PNG to BMP using PIL
         img = Image.open(io.BytesIO(png_bytes))
+        # Convert to 8-bit palette mode for smaller file size
+        img = img.convert('P', palette=Image.ADAPTIVE, colors=256)
         bmp_buffer = io.BytesIO()
         img.save(bmp_buffer, format='BMP')
         bmp_buffer.seek(0)
