@@ -37,10 +37,13 @@ def render_svg_to_bmp(template_name, context, width=800, height=480):
             output_height=height
         )
 
-        # Convert PNG to BMP using PIL
+        # Convert PNG to 1-bit BMP using PIL
         img = Image.open(io.BytesIO(png_bytes))
+        # Convert to 1-bit (monochrome) mode
+        # '1' mode uses Floyd-Steinberg dithering for color to B&W conversion
+        img_1bit = img.convert('1')
         bmp_buffer = io.BytesIO()
-        img.save(bmp_buffer, format='BMP')
+        img_1bit.save(bmp_buffer, format='BMP')
         bmp_buffer.seek(0)
 
         return bmp_buffer.getvalue()
