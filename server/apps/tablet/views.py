@@ -301,6 +301,32 @@ def weather_view(request):
         return JsonResponse({'error': 'Not found'}, status=404)
 
     try:
+        # Check cache FIRST before any API calls or processing
+        # Set up cache directory and filename
+        current_time = datetime.now()
+        current_file = Path(__file__).resolve()
+        cache_dir = current_file.parent / 'cache' / 'weather_bmp'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate filename with date and hour (e.g., weather_chart_2024-01-15_14.bmp)
+        date_hour_str = current_time.strftime('%Y-%m-%d_%H')
+        cache_filename = f'weather_chart_{date_hour_str}.bmp'
+        cache_filepath = cache_dir / cache_filename
+
+        # Check if cached file exists for current hour
+        if cache_filepath.exists():
+            try:
+                # Read and return cached file
+                with open(cache_filepath, 'rb') as f:
+                    cached_bmp_bytes = f.read()
+                logger.info(f"Returning cached BMP file: {cache_filename}")
+                response = HttpResponse(cached_bmp_bytes, content_type='image/bmp')
+                # Note: lat/lon not available yet, but cache is based on time only
+                response['Content-Disposition'] = f'inline; filename="{cache_filename}"'
+                return response
+            except Exception as e:
+                logger.warning(f"Error reading cached file {cache_filename}: {e}, will regenerate")
+
         # Get Tomorrow.io API key from environment
         api_key = os.getenv('TOMORROW_IO_API_KEY')
         if not api_key:
@@ -345,7 +371,6 @@ def weather_view(request):
         weekly_forecast = get_weekly_forecast(lat, lon, api_key)
 
         # Find current temperature from first or second hourly forecast (whichever is closer to current time)
-        current_time = datetime.now()
         current_temp = None
         if hourly_forecast and len(hourly_forecast) >= 2:
             # Parse first two forecast times
@@ -605,31 +630,6 @@ def weather_view(request):
                         'high_label_y': high_y - 5,  # Label above the high point
                         'day_label_y': weekly_chart_offset_y + weekly_plot_height + (x_axis_label_height * 1.5),
                     })
-
-        # Set up cache directory and filename
-        # Cache directory: server/apps/tablet/cache/weather_bmp/
-        current_file = Path(__file__).resolve()
-        cache_dir = current_file.parent / 'cache' / 'weather_bmp'
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate filename with date and hour (e.g., weather_chart_2024-01-15_14.bmp)
-        # current_time is already defined above
-        date_hour_str = current_time.strftime('%Y-%m-%d_%H')
-        cache_filename = f'weather_chart_{date_hour_str}.bmp'
-        cache_filepath = cache_dir / cache_filename
-
-        # Check if cached file exists for current hour
-        if cache_filepath.exists():
-            try:
-                # Read and return cached file
-                with open(cache_filepath, 'rb') as f:
-                    cached_bmp_bytes = f.read()
-                logger.info(f"Returning cached BMP file: {cache_filename}")
-                response = HttpResponse(cached_bmp_bytes, content_type='image/bmp')
-                response['Content-Disposition'] = f'inline; filename="weather_chart_{lat}_{lon}.bmp"'
-                return response
-            except Exception as e:
-                logger.warning(f"Error reading cached file {cache_filename}: {e}, will regenerate")
 
         # Check for any existing cached files that don't match current hour and delete them
         try:
