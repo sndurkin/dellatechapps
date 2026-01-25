@@ -330,4 +330,5 @@ server/static/
 # Bus image assets (ignore files but keep folder structure)
 server/apps/tablet/assets/*
 !server/apps/tablet/assets/.gitkeep
+server/apps/tablet/cache/*
 
