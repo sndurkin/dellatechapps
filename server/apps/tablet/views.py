@@ -4,13 +4,15 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.views import View
+from django.utils import timezone
 import logging
 import json
 import os
-from datetime import datetime
+from datetime import datetime, time, date
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from .fetch_bus_info import get_bus_info, get_latest_bus_data, invalidate_bus_session, refresh_map_with_session_restore, create_bus_session
-from .models import BusSession, BusData
+from .models import BusSession, BusData, BusDashboardSkip
 from .bus_image_renderer import render_icon_at_coordinates
 from .weather import get_hourly_forecast, get_weekly_forecast
 from .svg_to_bmp import render_svg_to_bmp
@@ -698,3 +700,88 @@ def weather_view(request):
             status=500,
             content_type='text/html'
         )
+
+
+@require_http_methods(["GET"])
+def status_view(request):
+    """
+    Get the current dashboard status (bus or weather).
+
+    Returns 'bus' dashboard during specific time windows on weekdays:
+    - Morning: 6:48 AM to 6:55 AM
+    - Afternoon: 2:38 PM to 2:45 PM
+
+    Returns 'weather' dashboard at all other times.
+
+    Date ranges configured in BusDashboardSkip model will override and force 'weather'.
+
+    Query parameters:
+    - key: Required. Must match TABLET_KEY environment variable.
+    """
+    # Check if key is provided and matches TABLET_KEY environment variable
+    key = request.GET.get('key')
+    if not key:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    tablet_key = os.getenv('TABLET_KEY')
+    if not tablet_key or key != tablet_key:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    try:
+        # Get current time in America/New_York timezone
+        eastern_tz = ZoneInfo('America/New_York')
+        now_utc = timezone.now()
+        now_eastern = now_utc.astimezone(eastern_tz)
+
+        current_date = now_eastern.date()
+        current_time = now_eastern.time()
+        current_weekday = now_eastern.weekday()  # 0 = Monday, 6 = Sunday
+
+        # Check if current date falls within any skip periods
+        skip_periods = BusDashboardSkip.objects.filter(is_active=True)
+        is_skipped = False
+        for skip_period in skip_periods:
+            if skip_period.contains_date(current_date):
+                is_skipped = True
+                break
+
+        # Prepare response data with current time
+        response_data = {
+            'dashboard': 'weather',
+            'current_time': now_eastern.isoformat(),
+            'current_time_readable': now_eastern.strftime('%Y-%m-%d %I:%M:%S %p') + ' ' + str(eastern_tz),
+            'timezone': 'America/New_York'
+        }
+
+        # If date is in skip period, always return weather
+        if is_skipped:
+            return JsonResponse(response_data)
+
+        # Check if it's a weekday (Monday = 0, Friday = 4)
+        is_weekday = current_weekday < 5
+
+        if not is_weekday:
+            return JsonResponse(response_data)
+
+        # Define bus time windows
+        morning_start = time(6, 48)  # 6:48 AM
+        morning_end = time(6, 55)    # 6:55 AM
+        afternoon_start = time(14, 38)  # 2:38 PM
+        afternoon_end = time(14, 45)    # 2:45 PM
+
+        # Check if current time is within bus windows
+        in_morning_window = morning_start <= current_time <= morning_end
+        in_afternoon_window = afternoon_start <= current_time <= afternoon_end
+
+        if in_morning_window or in_afternoon_window:
+            response_data['dashboard'] = 'bus'
+            return JsonResponse(response_data)
+        else:
+            return JsonResponse(response_data)
+
+    except Exception as e:
+        logger.error(f"Error in status view: {e}")
+        return JsonResponse({
+            'error': 'Failed to get dashboard status',
+            'details': str(e)
+        }, status=500)

@@ -81,3 +81,30 @@ class BusData(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class BusDashboardSkip(models.Model):
+    """
+    Store date ranges where the bus dashboard should be skipped (holidays, summer breaks, etc.)
+    """
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    name = models.CharField(max_length=255, help_text="Description of the skip period (e.g., 'Summer Break 2024')")
+    start_date = models.DateField(help_text="Start date of the skip period (inclusive)")
+    end_date = models.DateField(help_text="End date of the skip period (inclusive)")
+    is_active = models.BooleanField(default=True, help_text="Whether this skip period is currently active")
+
+    def __str__(self):
+        return f"{self.name} ({self.start_date} to {self.end_date})"
+
+    def contains_date(self, date):
+        """
+        Check if a given date falls within this skip period.
+        """
+        return self.is_active and self.start_date <= date <= self.end_date
+
+    class Meta:
+        ordering = ['-start_date']
+        verbose_name = "Bus Dashboard Skip Period"
+        verbose_name_plural = "Bus Dashboard Skip Periods"
