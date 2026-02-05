@@ -126,15 +126,6 @@ docker exec -it dellatechapps-db-1 bash
 psql -U postgres
 ```
 
-#### Fixing Collation Version Mismatch
-
-If you see collation version mismatch warnings in the logs, the production setup automatically refreshes the collation version on startup. For manual fixes:
-
-```bash
-# Run the refresh command directly
-docker exec -it dellatechapps-db-1 psql -U postgres -d postgres -c "ALTER DATABASE postgres REFRESH COLLATION VERSION;"
-```
-
 ### Shell Access
 
 Access the web service shell:
