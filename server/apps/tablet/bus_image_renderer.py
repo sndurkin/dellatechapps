@@ -3,6 +3,36 @@ import os
 import io
 import json
 
+# Cache for fixed palettes per map image
+_palette_cache = {}
+
+
+def _get_fixed_palette_image(base_image):
+    """
+    Generate or retrieve a fixed palette image for a base image.
+    This ensures consistent palette mapping across renders.
+    Returns a quantized palette-mode image that can be used as a reference.
+    """
+    # Use image size as cache key (assuming same size = same base image)
+    cache_key = base_image.size
+
+    if cache_key not in _palette_cache:
+        # Convert to RGB if needed
+        if base_image.mode != 'RGB':
+            rgb_image = base_image.convert('RGB')
+        else:
+            rgb_image = base_image
+
+        # Create a fixed palette from the base image
+        # Use quantize to create a deterministic palette
+        # MEDIANCUT should be deterministic for the same input
+        palette_image = rgb_image.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+        _palette_cache[cache_key] = palette_image
+
+        return palette_image
+    else:
+        return _palette_cache[cache_key]
+
 
 def load_image_coords():
     """
@@ -129,8 +159,24 @@ def render_icon_at_coordinates(lat, lon, return_bytes=False):
                 img_with_icon = rgb_img
             elif img_with_icon.mode != 'RGB':
                 img_with_icon = img_with_icon.convert('RGB')
-            # Now convert to 8-bit palette mode
-            img_with_icon = img_with_icon.convert('P', palette=Image.ADAPTIVE, colors=256)
+
+            # Use a fixed palette based on the base map image (before bus icon was added)
+            # This ensures consistent palette mapping and prevents false differences
+            # when only the bus icon position changes
+            base_img_rgb = img.convert('RGB') if img.mode != 'RGB' else img
+            fixed_palette_image = _get_fixed_palette_image(base_img_rgb)
+
+            # Quantize the image with the bus icon using the fixed palette as reference
+            # This ensures the same colors map to the same palette indices
+            # The fixed palette prevents adaptive palette recalculation that causes
+            # false pixel differences when only the bus icon position changes
+            try:
+                img_with_icon = img_with_icon.quantize(palette=fixed_palette_image)
+            except TypeError:
+                # Fallback for older PIL versions that don't support palette parameter
+                # Apply the fixed palette manually
+                img_with_icon = img_with_icon.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+                img_with_icon.putpalette(fixed_palette_image.palette)
 
             if return_bytes:
                 # Return image as bytes (BMP format)

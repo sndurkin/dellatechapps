@@ -8,9 +8,13 @@ from django.utils import timezone
 import logging
 import json
 import os
+import hashlib
+import base64
+import io
 from datetime import datetime, time, date
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from PIL import Image
 from .fetch_bus_info import get_bus_info, get_latest_bus_data, invalidate_bus_session, refresh_map_with_session_restore, create_bus_session
 from .models import BusSession, BusData, BusDashboardSkip
 from .bus_image_renderer import render_icon_at_coordinates
@@ -19,11 +23,18 @@ from .svg_to_bmp import render_svg_to_bmp
 
 logger = logging.getLogger(__name__)
 
+# In-memory cache for storing recent bus images by hash
+# Format: {hash_string: image_bytes}
+_bus_image_cache = {}
+# Maximum number of images to keep in cache
+_MAX_CACHE_SIZE = 3
+
 
 @require_http_methods(["GET"])
 def bus_view(request):
     """
     Get current bus information for a given session key.
+    Supports partial refresh by comparing with a previously generated image.
 
     Requirements:
     - Compare the key to BUS_KEY env variable, return 404 if no match
@@ -36,6 +47,13 @@ def bus_view(request):
     Query parameters:
     - key: Required. Must match BUS_KEY environment variable.
     - debug: Optional. If 'true', returns JSON location data instead of BMP image response.
+    - lastHash: Optional. Hash of the previous image to compare against for partial refresh.
+
+    Returns:
+    - Full refresh: BMP image with X-Update-Type: full, X-Image-Hash headers
+    - Partial refresh: JSON with changed regions, X-Update-Type: partial, X-Image-Hash headers
+    - Skip: 204 No Content with X-Update-Type: skip, X-Image-Hash headers
+    - Error: JSON error response if coordinates are invalid or debug=true
     """
     # Check if key is provided and matches TABLET_KEY environment variable
     key = request.GET.get('key')
@@ -101,18 +119,84 @@ def bus_view(request):
                 if request.GET.get('debug') == 'true':
                     response_data['map_available'] = True
                 else:
-                    map_image_bytes = render_icon_at_coordinates(
-                        bus_data.bus_location['lat'],
-                        bus_data.bus_location['lon'],
-                        return_bytes=True
-                    )
-                    if map_image_bytes:
-                        # Return image directly as BMP response
-                        response = HttpResponse(map_image_bytes, content_type='image/bmp')
-                        response['Content-Disposition'] = f'inline; filename="bus_map_{bus_data.bus_location["lat"]}_{bus_data.bus_location["lon"]}.bmp"'
-                        return response
-                    else:
+                    lat = bus_data.bus_location['lat']
+                    lon = bus_data.bus_location['lon']
+                    last_hash = request.GET.get('lastHash')
+
+                    logger.info(f"bus_view: Rendering image for lat={lat}, lon={lon}, lastHash={'provided' if last_hash else 'not provided'}")
+
+                    # Call the render function to get image bytes
+                    map_image_bytes = render_icon_at_coordinates(lat, lon, return_bytes=True)
+
+                    if not map_image_bytes:
+                        logger.warning(f"bus_view: Map could not be rendered for coordinates ({lat}, {lon})")
                         response_data['error_message'] = 'Map could not be rendered as an image'
+                    else:
+                        # Generate hash for current image
+                        current_hash = _generate_image_hash(map_image_bytes)
+                        logger.info(f"bus_view: Generated current hash: {current_hash[:16]}... (image size: {len(map_image_bytes)} bytes)")
+
+                        # Store current image in cache
+                        _bus_image_cache[current_hash] = map_image_bytes
+                        logger.info(f"bus_view: Cache size: {len(_bus_image_cache)}/{_MAX_CACHE_SIZE}, cached hashes: {[h[:8] + '...' for h in list(_bus_image_cache.keys())[:5]]}")
+
+                        # Limit cache size
+                        if len(_bus_image_cache) > _MAX_CACHE_SIZE:
+                            # Remove oldest entry (simple FIFO - remove first key)
+                            oldest_key = next(iter(_bus_image_cache))
+                            del _bus_image_cache[oldest_key]
+                            logger.info(f"bus_view: Removed oldest cache entry: {oldest_key[:16]}...")
+
+                        # If lastHash is provided, try to find and compare with previous image
+                        if last_hash:
+                            logger.info(f"bus_view: lastHash provided: {last_hash[:16]}...")
+                            if last_hash in _bus_image_cache:
+                                logger.info(f"bus_view: Found lastHash in cache, comparing images...")
+                                previous_bytes = _bus_image_cache[last_hash]
+
+                                # Compare images
+                                result_type, data = _compare_images_and_find_regions(map_image_bytes, previous_bytes)
+                                logger.info(f"bus_view: Comparison result: {result_type}")
+
+                                if result_type == 'identical':
+                                    # Images are identical - return skip
+                                    logger.info(f"bus_view: Images identical, returning skip (204)")
+                                    response = HttpResponse(status=204)
+                                    response['X-Update-Type'] = 'skip'
+                                    response['X-Image-Hash'] = current_hash
+                                    return response
+                                elif result_type == 'partial':
+                                    # Partial refresh - return changed regions
+                                    regions, changed_count, total_pixels = data
+                                    logger.info(f"bus_view: Partial refresh: {len(regions)} region(s), {changed_count}/{total_pixels} pixels changed")
+                                    response_data = {
+                                        'regions': regions
+                                    }
+                                    response = JsonResponse(response_data, content_type='application/json')
+                                    response['X-Update-Type'] = 'partial'
+                                    response['X-Image-Hash'] = current_hash
+                                    return response
+                                else:
+                                    # result_type == 'full' - too many changes, return full refresh
+                                    logger.info(f"bus_view: Comparison returned 'full', returning full refresh")
+                                    response = HttpResponse(map_image_bytes, content_type='image/bmp')
+                                    response['X-Update-Type'] = 'full'
+                                    response['X-Image-Hash'] = current_hash
+                                    response['Content-Disposition'] = f'inline; filename="bus_map_{lat}_{lon}.bmp"'
+                                    return response
+                            else:
+                                logger.warning(f"bus_view: lastHash {last_hash[:16]}... not found in cache. Cache keys: {[h[:8] + '...' for h in list(_bus_image_cache.keys())]}")
+
+                        # No lastHash provided or hash not found - return full refresh
+                        if not last_hash:
+                            logger.info(f"bus_view: No lastHash provided, returning full refresh")
+                        else:
+                            logger.info(f"bus_view: lastHash not found in cache, returning full refresh")
+                        response = HttpResponse(map_image_bytes, content_type='image/bmp')
+                        response['X-Update-Type'] = 'full'
+                        response['X-Image-Hash'] = current_hash
+                        response['Content-Disposition'] = f'inline; filename="bus_map_{lat}_{lon}.bmp"'
+                        return response
 
         # Add error message if request was not successful
         if not bus_data.request_successful and bus_data.error_message:
@@ -222,62 +306,269 @@ def session_status_view(request):
         }, status=500)
 
 
-@require_http_methods(["GET"])
-def render_bus_view(request):
-    """
-    Render a bus icon at the specified lat/lon coordinates on the appropriate map image.
+def _generate_image_hash(image_bytes):
+    """Generate SHA256 hash for image bytes."""
+    return hashlib.sha256(image_bytes).hexdigest()
 
-    Query parameters:
-    - lat: Required. Latitude coordinate (float)
-    - lon: Required. Longitude coordinate (float)
+
+def _find_connected_components(changed_pixels_set, width, height):
+    """
+    Find connected components in a set of changed pixels using flood fill.
 
     Returns:
-    - BMP image response with the rendered bus icon, or JSON error response if coordinates are invalid
+        List of sets, where each set contains the pixels in one connected component.
+    """
+    components = []
+    visited = set()
+
+    # Directions for 8-connected neighbors
+    directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
+    def flood_fill(start_pixel):
+        """Flood fill to find all connected pixels."""
+        component = set()
+        stack = [start_pixel]
+
+        while stack:
+            x, y = stack.pop()
+            if (x, y) in visited or (x, y) not in changed_pixels_set:
+                continue
+
+            visited.add((x, y))
+            component.add((x, y))
+
+            # Check all 8 neighbors
+            for dx, dy in directions:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < width and 0 <= ny < height:
+                    if (nx, ny) in changed_pixels_set and (nx, ny) not in visited:
+                        stack.append((nx, ny))
+
+        return component
+
+    # Find all connected components
+    for pixel in changed_pixels_set:
+        if pixel not in visited:
+            component = flood_fill(pixel)
+            if component:
+                components.append(component)
+
+    return components
+
+
+def _merge_close_regions(bounding_boxes, merge_threshold=50):
+    """
+    Merge regions that are close together.
+
+    Args:
+        bounding_boxes: List of dicts with keys 'x1', 'y1', 'x2', 'y2'
+        merge_threshold: Maximum distance between regions to merge them (default 50 pixels)
+
+    Returns:
+        List of merged bounding boxes
+    """
+    if not bounding_boxes:
+        return []
+
+    merged = []
+    used = set()
+
+    for i, box1 in enumerate(bounding_boxes):
+        if i in used:
+            continue
+
+        # Start with box1
+        merged_box = {
+            'x1': box1['x1'],
+            'y1': box1['y1'],
+            'x2': box1['x2'],
+            'y2': box1['y2']
+        }
+        used.add(i)
+
+        # Try to merge with other boxes
+        changed = True
+        while changed:
+            changed = False
+            for j, box2 in enumerate(bounding_boxes):
+                if j in used or j == i:
+                    continue
+
+                # Calculate distance between boxes
+                # Distance is the minimum distance between any two points on the boxes
+                # If boxes overlap or are close, merge them
+                center1_x = (merged_box['x1'] + merged_box['x2']) / 2
+                center1_y = (merged_box['y1'] + merged_box['y2']) / 2
+                center2_x = (box2['x1'] + box2['x2']) / 2
+                center2_y = (box2['y1'] + box2['y2']) / 2
+
+                # Calculate distance between centers
+                dist = ((center1_x - center2_x) ** 2 + (center1_y - center2_y) ** 2) ** 0.5
+
+                # Also check if boxes are close (considering their sizes)
+                # Merge if distance is less than threshold
+                if dist < merge_threshold:
+                    # Merge boxes
+                    merged_box['x1'] = min(merged_box['x1'], box2['x1'])
+                    merged_box['y1'] = min(merged_box['y1'], box2['y1'])
+                    merged_box['x2'] = max(merged_box['x2'], box2['x2'])
+                    merged_box['y2'] = max(merged_box['y2'], box2['y2'])
+                    used.add(j)
+                    changed = True
+
+        merged.append(merged_box)
+
+    return merged
+
+
+def _compare_images_and_find_regions(current_bytes, previous_bytes, threshold=0.05, merge_threshold=50):
+    """
+    Compare two BMP images and find changed regions.
+    Supports multiple separate regions and merges them if close together.
+
+    Args:
+        current_bytes: Current image as BMP bytes
+        previous_bytes: Previous image as BMP bytes
+        threshold: Maximum fraction of changed pixels to consider for partial refresh (default 5%)
+        merge_threshold: Maximum distance between regions to merge them (default 50 pixels)
+
+    Returns:
+        tuple: (result_type, data)
+        - result_type: 'identical', 'partial', or 'full'
+        - data: For 'partial': (regions, changed_count, total_pixels)
+                For 'identical' or 'full': None
     """
     try:
-        # Get lat/lon from query parameters
-        lat_str = request.GET.get('lat')
-        lon_str = request.GET.get('lon')
-        custom_filename = request.GET.get('filename')
+        logger.info(f"_compare_images_and_find_regions: Starting comparison (threshold={threshold})")
+        logger.info(f"_compare_images_and_find_regions: Current image size: {len(current_bytes)} bytes, Previous image size: {len(previous_bytes)} bytes")
 
-        if not lat_str or not lon_str:
-            return JsonResponse({
-                'error': 'Missing required parameters',
-                'details': 'Both lat and lon parameters are required'
-            }, status=400)
+        # Quick check: if bytes are identical, images are identical
+        if current_bytes == previous_bytes:
+            logger.info(f"_compare_images_and_find_regions: Images are byte-identical, returning 'identical'")
+            return ('identical', None)
 
-        try:
-            lat = float(lat_str)
-            lon = float(lon_str)
-        except ValueError:
-            return JsonResponse({
-                'error': 'Invalid coordinate format',
-                'details': 'lat and lon must be valid floating point numbers'
-            }, status=400)
+        # Load images from bytes
+        current_img = Image.open(io.BytesIO(current_bytes))
+        previous_img = Image.open(io.BytesIO(previous_bytes))
 
-        # Call the render function to get image bytes
-        image_bytes = render_icon_at_coordinates(lat, lon, return_bytes=True)
+        logger.info(f"_compare_images_and_find_regions: Current image: {current_img.size} {current_img.mode}, Previous image: {previous_img.size} {previous_img.mode}")
 
-        if image_bytes:
-            # Return image directly as BMP response
-            response = HttpResponse(image_bytes, content_type='image/bmp')
-            response['Content-Disposition'] = f'inline; filename="bus_map_{lat}_{lon}.bmp"'
-            return response
-        else:
-            return JsonResponse({
-                'success': False,
-                'lat': lat,
-                'lon': lon,
-                'error': 'No matching bounds found',
-                'details': f'The coordinates ({lat}, {lon}) do not fall within any of the defined image bounds'
-            }, status=404)
+        # Ensure images are same size
+        if current_img.size != previous_img.size:
+            logger.warning(f"_compare_images_and_find_regions: Image sizes differ ({current_img.size} vs {previous_img.size}), returning 'full'")
+            return ('full', None)
+
+        # Convert to RGB for comparison if needed
+        if current_img.mode != 'RGB':
+            current_img = current_img.convert('RGB')
+        if previous_img.mode != 'RGB':
+            previous_img = previous_img.convert('RGB')
+
+        # Get image dimensions
+        width, height = current_img.size
+        total_pixels = width * height
+        logger.info(f"_compare_images_and_find_regions: Image dimensions: {width}x{height}, total pixels: {total_pixels}")
+
+        # Get pixel data
+        current_pixels = current_img.load()
+        previous_pixels = previous_img.load()
+
+        # Find changed pixels
+        # Both images are in RGB mode at this point
+        logger.info(f"_compare_images_and_find_regions: Scanning for changed pixels...")
+        changed_pixels_set = set()
+        for y in range(height):
+            for x in range(width):
+                if current_pixels[x, y] != previous_pixels[x, y]:
+                    changed_pixels_set.add((x, y))
+
+        changed_pixel_count = len(changed_pixels_set)
+        change_ratio = changed_pixel_count / total_pixels if total_pixels > 0 else 0
+        logger.info(f"_compare_images_and_find_regions: Changed pixels: {changed_pixel_count}/{total_pixels} ({change_ratio*100:.2f}%), threshold: {threshold*100:.2f}%")
+
+        # If no changes, return identical
+        if changed_pixel_count == 0:
+            logger.info(f"_compare_images_and_find_regions: No changed pixels, returning 'identical'")
+            return ('identical', None)
+
+        # If too many changes, return full refresh
+        if change_ratio > threshold:
+            logger.info(f"_compare_images_and_find_regions: Change ratio {change_ratio*100:.2f}% exceeds threshold {threshold*100:.2f}%, returning 'full'")
+            return ('full', None)
+
+        # Find connected components (separate regions)
+        logger.info(f"_compare_images_and_find_regions: Finding connected components...")
+        components = _find_connected_components(changed_pixels_set, width, height)
+        logger.info(f"_compare_images_and_find_regions: Found {len(components)} connected component(s)")
+
+        if not components:
+            logger.info(f"_compare_images_and_find_regions: No components found, returning 'identical'")
+            return ('identical', None)
+
+        # Create bounding boxes for each component
+        bounding_boxes = []
+        for i, component in enumerate(components):
+            if not component:
+                continue
+
+            min_x = min(p[0] for p in component)
+            max_x = max(p[0] for p in component)
+            min_y = min(p[1] for p in component)
+            max_y = max(p[1] for p in component)
+            logger.info(f"_compare_images_and_find_regions: Component {i+1}: {len(component)} pixels, bounds: ({min_x}, {min_y}) to ({max_x}, {max_y})")
+
+            # Add padding around changed region (10 pixels)
+            padding = 10
+            x1 = max(0, min_x - padding)
+            y1 = max(0, min_y - padding)
+            x2 = min(width, max_x + padding + 1)
+            y2 = min(height, max_y + padding + 1)
+
+            bounding_boxes.append({
+                'x1': x1,
+                'y1': y1,
+                'x2': x2,
+                'y2': y2
+            })
+
+        # Merge close regions
+        logger.info(f"_compare_images_and_find_regions: Merging close regions (threshold: {merge_threshold}px)...")
+        merged_boxes = _merge_close_regions(bounding_boxes, merge_threshold)
+        logger.info(f"_compare_images_and_find_regions: After merging: {len(merged_boxes)} region(s)")
+
+        # Extract regions and encode them
+        regions = []
+        for box in merged_boxes:
+            x1, y1, x2, y2 = box['x1'], box['y1'], box['x2'], box['y2']
+
+            # Extract region from current image
+            region_img = current_img.crop((x1, y1, x2, y2))
+
+            # Convert region to BMP bytes
+            region_buffer = io.BytesIO()
+            # Convert to palette mode for consistency
+            if region_img.mode != 'P':
+                region_img = region_img.convert('P', palette=Image.ADAPTIVE, colors=256)
+            region_img.save(region_buffer, format='BMP')
+            region_bytes = region_buffer.getvalue()
+
+            # Encode as base64
+            region_base64 = base64.b64encode(region_bytes).decode('utf-8')
+
+            regions.append({
+                'x1': x1,
+                'y1': y1,
+                'x2': x2,
+                'y2': y2,
+                'data': region_base64
+            })
+
+        logger.info(f"_compare_images_and_find_regions: Returning 'partial' with {len(regions)} region(s)")
+        return ('partial', (regions, changed_pixel_count, total_pixels))
 
     except Exception as e:
-        logger.error(f"Error rendering bus icon: {e}")
-        return JsonResponse({
-            'error': 'Failed to render bus icon',
-            'details': str(e)
-        }, status=500)
+        logger.error(f"_compare_images_and_find_regions: Error comparing images: {e}", exc_info=True)
+        return ('full', None)
 
 
 @require_http_methods(["GET"])
