@@ -332,3 +332,6 @@ server/apps/tablet/assets/*
 !server/apps/tablet/assets/.gitkeep
 server/apps/tablet/cache/*
 
+# Bus output (generated HTML/assets)
+server/bus_output/
+
