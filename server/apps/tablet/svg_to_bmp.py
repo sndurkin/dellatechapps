@@ -5,7 +5,7 @@ Uses CairoSVG for SVG rendering and PIL for PNG to BMP conversion.
 import io
 import logging
 import cairosvg
-from PIL import Image
+from PIL import Image, ImageFilter
 from django.template.loader import render_to_string
 
 logger = logging.getLogger(__name__)
@@ -29,18 +29,19 @@ def render_svg_to_bmp(template_name, context, width=800, height=480):
         # Render template to SVG string
         svg_content = render_to_string(template_name, context)
 
-        # Convert SVG to PNG using CairoSVG
-        # output_width and output_height specify the output dimensions
+        # Convert SVG to PNG at a higher resolution so that after downscale + threshold,
+        # the same digits render identically (avoids anti-alias position-dependent differences)
+        scale = 8
         png_bytes = cairosvg.svg2png(
             bytestring=svg_content.encode('utf-8'),
-            output_width=width,
-            output_height=height
+            output_width=width * scale,
+            output_height=height * scale
         )
 
-        # Convert PNG to BMP using PIL
-        img = Image.open(io.BytesIO(png_bytes))
-        # Convert to 8-bit palette mode for smaller file size
-        img = img.convert('P', palette=Image.ADAPTIVE, colors=256)
+        # Grayscale, downscale, then threshold to 1-bit.
+        img = Image.open(io.BytesIO(png_bytes)).convert('L')
+        img = img.resize((width, height), Image.Resampling.LANCZOS)
+        img = img.point(lambda p: 255 if p >= 128 else 0, mode='1')
         bmp_buffer = io.BytesIO()
         img.save(bmp_buffer, format='BMP')
         bmp_buffer.seek(0)

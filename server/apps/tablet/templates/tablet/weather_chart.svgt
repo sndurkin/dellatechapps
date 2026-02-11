@@ -1,61 +1,69 @@
-<svg width="800" height="480" viewBox="0 0 800 480" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 800 480" xmlns="http://www.w3.org/2000/svg">
     <defs>
+        <!-- Dotted pattern for UV area -->
+        <pattern id="dotPattern"
+                x="0" y="0"
+                width="8" height="8"
+                patternUnits="userSpaceOnUse">
+        <g fill="#000">
+            <rect x="3" y="2" width="1" height="1"/>
+            <rect x="2" y="3" width="3" height="1"/>
+            <rect x="3" y="4" width="1" height="1"/>
+        </g>
+        </pattern>
+
         <style>
+            /* Explicit font for consistent 1-bit BMP rendering across text elements */
+            text {
+                font-family: "Arial, Helvetica, sans-serif;"
+            }
             .axis {
-                stroke: #333;
+                stroke: #000;
                 stroke-width: 1;
             }
             .grid-line {
-                stroke: #ccc;
-                stroke-width: 0.5;
+                stroke: #fff;
+                stroke-width: 2;
                 stroke-dasharray: 2,2;
             }
             .chart-line {
                 fill: none;
                 stroke: #000;
-                stroke-width: 2;
+                stroke-width: 3;
             }
             .uv-area {
-                fill: #999;
-                opacity: 0.3;
+                fill: url(#dotPattern);
             }
             .axis-label {
                 fill: #000;
                 font-size: 12px;
                 text-anchor: middle;
-                font-family: Arial, sans-serif;
             }
             .axis-label-y {
                 fill: #000;
-                font-size: 12px;
+                font-size: 0.75em;
                 text-anchor: end;
-                font-family: Arial, sans-serif;
             }
             .title {
                 fill: #000;
                 font-size: 16px;
                 font-weight: bold;
                 text-anchor: middle;
-                font-family: Arial, sans-serif;
             }
             .temp-label {
                 fill: #000;
-                font-size: 11px;
-                font-weight: bold;
+                font-size: 14px;
                 text-anchor: middle;
-                font-family: Arial, sans-serif;
             }
             .uv-label {
                 fill: #000;
-                font-size: 11px;
-                font-weight: bold;
+                font-size: 0.8em;
                 text-anchor: middle;
-                font-family: Arial, sans-serif;
             }
             .precip-line {
                 fill: none;
                 stroke: #000;
-                stroke-width: 1.5;
+                stroke-width: 2;
                 stroke-dasharray: 4,4;
             }
             .pill-shape {
@@ -64,24 +72,19 @@
             }
             .weekly-temp-label {
                 fill: #000;
-                font-size: 14px;
-                font-weight: bold;
+                font-size: 1em;
                 text-anchor: middle;
-                font-family: Arial, sans-serif;
             }
             .day-label {
                 fill: #000;
                 font-size: 12px;
                 text-anchor: middle;
-                font-family: Arial, sans-serif;
             }
             .sidebar-text {
                 fill: #000;
-                font-family: Arial, sans-serif;
             }
             .current-temp {
                 font-size: 32px;
-                font-weight: bold;
             }
             .current-date {
                 font-size: 18px;
@@ -135,13 +138,13 @@
     {% endif %}
 
     <!-- Min temperature label -->
-    <text x="{{ min_temp_label.x }}" y="{{ min_temp_label.y }}" class="temp-label">{{ min_temp_label.temp }}°F</text>
+    <text x="{{ min_temp_label.x }}" y="{{ min_temp_label.y }}" class="temp-label">{{ min_temp_label.temp }}</text>
 
     <!-- Max temperature label -->
-    <text x="{{ max_temp_label.x }}" y="{{ max_temp_label.y }}" class="temp-label">{{ max_temp_label.temp }}°F</text>
+    <text x="{{ max_temp_label.x }}" y="{{ max_temp_label.y }}" class="temp-label">{{ max_temp_label.temp }}</text>
 
     <!-- Peak UV index label -->
-    <text x="{{ peak_uv_label.x }}" y="{{ peak_uv_label.y }}" class="uv-label">{{ peak_uv_label.uv_index }} UV</text>
+    <text x="{{ peak_uv_label.x }}" y="{{ peak_uv_label.y }}" class="uv-label">{{ peak_uv_label.uv_index }} UV Index</text>
 
     <!-- Weekly Forecast Chart -->
     {% if weekly_chart_data %}
@@ -154,10 +157,10 @@
     <rect x="{{ day.pill_x }}" y="{{ day.pill_y }}" width="{{ day.pill_width }}" height="{{ day.pill_height }}" rx="{{ day.pill_radius }}" ry="{{ day.pill_radius }}" class="pill-shape"/>
 
     <!-- Low temperature label -->
-    <text x="{{ day.x_pos }}" y="{{ day.low_label_y }}" class="weekly-temp-label">{{ day.low_temp }}°F</text>
+    <text x="{{ day.x_pos }}" y="{{ day.low_label_y }}" class="weekly-temp-label">{{ day.low_temp }}</text>
 
     <!-- High temperature label -->
-    <text x="{{ day.x_pos }}" y="{{ day.high_label_y }}" class="weekly-temp-label">{{ day.high_temp }}°F</text>
+    <text x="{{ day.x_pos }}" y="{{ day.high_label_y }}" class="weekly-temp-label">{{ day.high_temp }}</text>
 
     <!-- Day label -->
     <text x="{{ day.x_pos }}" y="{{ day.day_label_y }}" class="day-label">{{ day.day_name }}</text>

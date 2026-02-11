@@ -679,6 +679,7 @@ def _load_test_data() -> Optional[Dict]:
     if os.path.exists(test_data_path):
         try:
             with open(test_data_path, 'r', encoding='utf-8') as f:
+                print(f"Loading test data from {test_data_path}")
                 return json.load(f)
         except (json.JSONDecodeError, IOError) as e:
             print(f"Error loading test data from {test_data_path}: {e}")
@@ -706,7 +707,7 @@ def get_hourly_forecast(latitude: float, longitude: float, api_key: str, timezon
         hourly_data = test_data.get('hourly', {})
         forecast = hourly_data.get('forecast', [])
         if forecast:
-            print(f"Using test data for hourly forecast ({len(forecast)} hours)")
+            print(f"Using test data for hourly forecast ({len(forecast)} hours)", flush=True)
             return forecast
 
     # Fall back to API if test data not available

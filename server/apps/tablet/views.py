@@ -594,7 +594,8 @@ def weather_view(request):
     try:
         # Check cache FIRST before any API calls or processing
         # Set up cache directory and filename
-        current_time = datetime.now()
+        # Use timezone-aware current time to match forecast datetimes
+        current_time = timezone.now()
         current_file = Path(__file__).resolve()
         cache_dir = current_file.parent / 'cache' / 'weather_bmp'
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -605,7 +606,7 @@ def weather_view(request):
         cache_filepath = cache_dir / cache_filename
 
         # Check if cached file exists for current hour
-        if cache_filepath.exists():
+        if False: #cache_filepath.exists():
             try:
                 # Read and return cached file
                 with open(cache_filepath, 'rb') as f:
@@ -766,15 +767,16 @@ def weather_view(request):
         min_temp_point = min(temp_points, key=lambda p: p['temp'])
         max_temp_point = max(temp_points, key=lambda p: p['temp'])
 
-        # Calculate label positions (8 pixels above the point)
+        # Calculate label positions (8 pixels above the point); round to integers so
+        # text lands on the pixel grid and renders consistently in 1-bit BMP.
         min_temp_label = {
-            'x': min_temp_point['x'],
-            'y': min_temp_point['y'] - 8,
+            'x': round(min_temp_point['x']),
+            'y': round(min_temp_point['y'] - 8),
             'temp': int(round(min_temp_point['temp']))
         }
         max_temp_label = {
-            'x': max_temp_point['x'],
-            'y': max_temp_point['y'] - 8,
+            'x': round(max_temp_point['x']),
+            'y': round(max_temp_point['y'] - 8),
             'temp': int(round(max_temp_point['temp']))
         }
 
@@ -801,8 +803,8 @@ def weather_view(request):
         # Find peak UV index point
         peak_uv_point = max(uv_points_with_data, key=lambda p: p['uv_index'])
         peak_uv_label = {
-            'x': peak_uv_point['x'],
-            'y': peak_uv_point['y'] - 8,
+            'x': round(peak_uv_point['x']),
+            'y': round(peak_uv_point['y'] - 8),
             'uv_index': int(round(peak_uv_point['uv_index']))
         }
 
@@ -847,12 +849,12 @@ def weather_view(request):
                 x_pos = sidebar_width + hourly_padding_width + (i / (len(hour_labels) - 1)) * plot_width if len(hour_labels) > 1 else sidebar_width + hourly_padding_width + plot_width / 2
                 hour_labels_with_pos.append({
                     'label': label,
-                    'x_pos': x_pos
+                    'x_pos': round(x_pos)
                 })
 
-        # Calculate remaining derived values for template
+        # Calculate remaining derived values for template (round text positions for 1-bit consistency)
         y_label_x = sidebar_width + hourly_padding_width - 10
-        x_label_y = y_axis_end + 20
+        x_label_y = round(y_axis_end + 20)
 
         # Process weekly forecast data for second chart
         weekly_chart_data = []
@@ -907,7 +909,7 @@ def weather_view(request):
 
                     weekly_chart_data.append({
                         'day_name': day_name,
-                        'x_pos': x_pos,
+                        'x_pos': round(x_pos),
                         'low_temp': int(round(low_temp)),
                         'high_temp': int(round(high_temp)),
                         'low_y': low_y,
@@ -917,9 +919,9 @@ def weather_view(request):
                         'pill_width': pill_width,
                         'pill_height': pill_height,
                         'pill_radius': pill_radius,
-                        'low_label_y': low_y + 20,  # Label below the low point
-                        'high_label_y': high_y - 5,  # Label above the high point
-                        'day_label_y': weekly_chart_offset_y + weekly_plot_height + (x_axis_label_height * 1.5),
+                        'low_label_y': round(low_y + 20),   # Label below the low point
+                        'high_label_y': round(high_y - 5),   # Label above the high point
+                        'day_label_y': round(weekly_chart_offset_y + weekly_plot_height + (x_axis_label_height * 1.5)),
                     })
 
         # Check for any existing cached files that don't match current hour and delete them
