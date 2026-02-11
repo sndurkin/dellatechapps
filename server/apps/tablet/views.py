@@ -220,6 +220,51 @@ def bus_view(request):
         }, status=500)
 
 
+@require_http_methods(["GET"])
+def test_bus(request, num):
+    """
+    Test endpoint that returns a static bus map BMP image.
+
+    Query parameters:
+    - key: Required. Must match TABLET_KEY environment variable.
+
+    Path parameters:
+    - num: Required. Integer. 1 returns bus_map_1.bmp, 2 returns bus_map_2.bmp.
+    """
+    # Check if key is provided and matches TABLET_KEY environment variable
+    key = request.GET.get('key')
+    if not key:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    tablet_key = os.getenv('TABLET_KEY')
+    if not tablet_key or key != tablet_key:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        assets_dir = os.path.join(current_dir, "assets")
+        filename = f"bus_map_{num}.bmp"
+        image_path = os.path.join(assets_dir, filename)
+
+        if not os.path.exists(image_path):
+            logger.warning(f"test_bus: Image file not found: {image_path}")
+            return JsonResponse({'error': 'Invalid test image number'}, status=400)
+
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+
+        response = HttpResponse(image_bytes, content_type="image/bmp")
+        response["Content-Disposition"] = f'inline; filename="{filename}"'
+        return response
+
+    except Exception as e:
+        logger.error(f"Error in test_bus view for num={num}: {e}", exc_info=True)
+        return JsonResponse({
+            'error': 'Failed to load test bus image',
+            'details': str(e)
+        }, status=500)
+
+
 @require_http_methods(["POST"])
 @csrf_exempt
 def invalidate_session_view(request):
