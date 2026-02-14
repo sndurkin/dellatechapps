@@ -223,13 +223,17 @@ def bus_view(request):
 @require_http_methods(["GET"])
 def test_bus(request, num):
     """
-    Test endpoint that returns a static bus map BMP image.
+    Test endpoint for bus map images.
+    - num=1: Returns bus_map_1.bmp directly.
+    - num=2: Diffs bus_map_1 vs bus_map_2 and returns the same partial refresh JSON
+             used in bus_view (regions with base64-encoded changed areas), or full/skip
+             depending on the comparison result.
 
     Query parameters:
     - key: Required. Must match TABLET_KEY environment variable.
 
     Path parameters:
-    - num: Required. Integer. 1 returns bus_map_1.bmp, 2 returns bus_map_2.bmp.
+    - num: Required. Integer. 1 or 2.
     """
     # Check if key is provided and matches TABLET_KEY environment variable
     key = request.GET.get('key')
@@ -240,22 +244,60 @@ def test_bus(request, num):
     if not tablet_key or key != tablet_key:
         return JsonResponse({'error': 'Not found'}, status=404)
 
+    if num not in (1, 2):
+        return JsonResponse({'error': 'Not found'}, status=404)
+
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         assets_dir = os.path.join(current_dir, "assets")
-        filename = f"bus_map_{num}.bmp"
-        image_path = os.path.join(assets_dir, filename)
 
-        if not os.path.exists(image_path):
-            logger.warning(f"test_bus: Image file not found: {image_path}")
-            return JsonResponse({'error': 'Invalid test image number'}, status=400)
+        if num == 1:
+            # Return bus_map_1.bmp directly
+            filename = "bus_map_1.bmp"
+            image_path = os.path.join(assets_dir, filename)
+            if not os.path.exists(image_path):
+                logger.warning(f"test_bus: Image file not found: {image_path}")
+                return JsonResponse({'error': 'Not found'}, status=404)
+            with open(image_path, "rb") as f:
+                image_bytes = f.read()
+            response = HttpResponse(image_bytes, content_type="image/bmp")
+            response["Content-Disposition"] = f'inline; filename="{filename}"'
+            return response
 
-        with open(image_path, "rb") as f:
-            image_bytes = f.read()
+        # num == 2: diff bus_map_1 vs bus_map_2, return partial refresh format like bus_view
+        path_1 = os.path.join(assets_dir, "bus_map_1.bmp")
+        path_2 = os.path.join(assets_dir, "bus_map_2.bmp")
+        if not os.path.exists(path_1) or not os.path.exists(path_2):
+            logger.warning(f"test_bus: One or both image files not found: {path_1}, {path_2}")
+            return JsonResponse({'error': 'Not found'}, status=404)
 
-        response = HttpResponse(image_bytes, content_type="image/bmp")
-        response["Content-Disposition"] = f'inline; filename="{filename}"'
-        return response
+        with open(path_1, "rb") as f:
+            previous_bytes = f.read()
+        with open(path_2, "rb") as f:
+            current_bytes = f.read()
+
+        current_hash = _generate_image_hash(current_bytes)
+        result_type, data = _compare_images_and_find_regions(current_bytes, previous_bytes)
+
+        if result_type == 'identical':
+            response = HttpResponse(status=204)
+            response['X-Update-Type'] = 'skip'
+            response['X-Image-Hash'] = current_hash
+            return response
+        elif result_type == 'partial':
+            regions, changed_count, total_pixels = data
+            response_data = {'regions': regions}
+            response = JsonResponse(response_data, content_type='application/json')
+            response['X-Update-Type'] = 'partial'
+            response['X-Image-Hash'] = current_hash
+            return response
+        else:
+            # result_type == 'full' - too many changes, return full bus_map_2.bmp
+            response = HttpResponse(current_bytes, content_type='image/bmp')
+            response['X-Update-Type'] = 'full'
+            response['X-Image-Hash'] = current_hash
+            response['Content-Disposition'] = 'inline; filename="bus_map_2.bmp"'
+            return response
 
     except Exception as e:
         logger.error(f"Error in test_bus view for num={num}: {e}", exc_info=True)
