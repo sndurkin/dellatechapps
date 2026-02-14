@@ -631,16 +631,26 @@ def _compare_images_and_find_regions(current_bytes, previous_bytes, threshold=0.
             # Extract region from current image
             region_img = current_img.crop((x1, y1, x2, y2))
 
-            # Convert region to BMP bytes
-            region_buffer = io.BytesIO()
-            # Convert to palette mode for consistency
-            if region_img.mode != 'P':
-                region_img = region_img.convert('P', palette=Image.ADAPTIVE, colors=256)
-            region_img.save(region_buffer, format='BMP')
-            region_bytes = region_buffer.getvalue()
+            # Convert to raw 1-bit packed bytes for Waveshare display:
+            # Each byte = 8 horizontal pixels, row-major, (aligned_width) * height bytes
+            # Convention: 0 = black, 1 = white (invert bit if your display expects opposite)
+            region_img = region_img.convert('L')  # grayscale
+            width, height = region_img.size
+            aligned_width_bytes = (width + 7) // 8
+            packed = bytearray()
+            pixels = region_img.load()
+            for y in range(height):
+                for byte_x in range(aligned_width_bytes):
+                    b = 0
+                    for bit in range(8):
+                        px = byte_x * 8 + bit
+                        if px < width:
+                            # 0 = black (ink), 1 = white (no ink)
+                            b |= (1 << (7 - bit)) if pixels[px, y] > 128 else 0
+                    packed.append(b)
 
             # Encode as base64
-            region_base64 = base64.b64encode(region_bytes).decode('utf-8')
+            region_base64 = base64.b64encode(bytes(packed)).decode('utf-8')
 
             regions.append({
                 'x1': x1,
