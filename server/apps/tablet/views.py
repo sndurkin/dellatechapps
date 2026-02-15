@@ -623,10 +623,23 @@ def _compare_images_and_find_regions(current_bytes, previous_bytes, threshold=0.
         merged_boxes = _merge_close_regions(bounding_boxes, merge_threshold)
         logger.info(f"_compare_images_and_find_regions: After merging: {len(merged_boxes)} region(s)")
 
+        img_width, img_height = width, height
+
         # Extract regions and encode them
         regions = []
         for box in merged_boxes:
             x1, y1, x2, y2 = box['x1'], box['y1'], box['x2'], box['y2']
+
+            # Align coordinates to 8-pixel boundaries for byte alignment
+            # (1 bit per pixel = 8 pixels per byte)
+            x1 = (max(0, x1) // 8) * 8
+            y1 = (max(0, y1) // 8) * 8
+            x2 = (min(img_width, (x2 + 7) // 8 * 8) // 8) * 8
+            y2 = (min(img_height, (y2 + 7) // 8 * 8) // 8) * 8
+            if x2 <= x1:
+                x2 = min(img_width, x1 + 8)
+            if y2 <= y1:
+                y2 = min(img_height, y1 + 8)
 
             # Extract region from current image
             region_img = current_img.crop((x1, y1, x2, y2))
