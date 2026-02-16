@@ -9,6 +9,7 @@ colorama==0.4.6
 distro==1.9.0
 Django==5.1.1
 djangorestframework==3.15.2
+django-constance[redis]==4.3.2  # https://github.com/jazzband/django-constance
 gunicorn==23.0.0
 h11==0.14.0
 h2==4.1.0

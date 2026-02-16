@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "django.contrib.staticfiles",
     "rest_framework",
+    "constance",
     "server.apps.storymagic",
     "server.apps.kitchenbuddy",
     "server.apps.tablet",
@@ -156,3 +157,10 @@ STATIC_ROOT = BASE_DIR / "static"
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Constance configuration
+CONSTANCE_BACKEND = "constance.backends.database.DatabaseBackend"
+CONSTANCE_CONFIG = {
+    "TABLET_BUS_POLL_INTERVAL": (15, "Seconds to wait before next request to bus view"),
+    "TABLET_WEATHER_POLL_INTERVAL": (60, "Seconds to wait before next request to weather view"),
+}

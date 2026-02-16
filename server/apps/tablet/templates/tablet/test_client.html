@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tablet Dashboard Test Client</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            margin: 1.5rem;
+            max-width: 1200px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+        .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 1rem; }
+        .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .col-left { width: 400px; }
+        .col-right { display: flex; flex-direction: column; gap: 1rem; }
+        .panel {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        .panel-grid {
+            display: grid;
+            grid-template-columns: 60px 1fr;
+            gap: 0.5rem 1rem;
+            align-items: center;
+        }
+        .panel-grid label { text-align: right; }
+        .panel-grid .btn-row { display: flex; gap: 0.5rem; align-items: center; }
+        input[type="number"] { width: 100%; max-width: 12rem; padding: 0.4rem; }
+        button {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        #btnStart { background: #0f3460; color: #e94560; }
+        #btnStart:hover { background: #1a4a7a; }
+        #btnStart:disabled { opacity: 0.5; cursor: not-allowed; }
+        #btnReset { background: #333; color: #ccc; }
+        #btnReset:hover { background: #444; }
+        #status {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 12rem;
+            overflow-y: auto;
+        }
+        #headers {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.8rem;
+            color: #aaccff;
+            white-space: pre;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #countdown {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #e94560;
+        }
+        img {
+            min-width: 800px;
+            min-height: 480px;
+            max-width: 800px;
+            max-height: 480px;
+            object-fit: contain;
+        }
+        .error { color: #e94560; }
+        .ok { color: #4ade80; }
+    </style>
+</head>
+<body>
+    <h1>Tablet Dashboard Test Client</h1>
+
+    <div class="layout">
+        <div class="col-left">
+            <div class="panel panel-grid">
+                <label for="lat">Lat:</label>
+                <input type="number" id="lat" step="any" placeholder="e.g. 40.7128" value="">
+                <label for="lon">Lon:</label>
+                <input type="number" id="lon" step="any" placeholder="e.g. -74.0060" value="">
+                <span></span>
+                <div class="btn-row">
+                    <button id="btnStart">Start</button>
+                    <button id="btnReset">Reset</button>
+                </div>
+                <span></span>
+                <span id="countdown"></span>
+            </div>
+
+            <div class="panel">
+                <pre id="status">Enter lat/lon and click Start.</pre>
+            </div>
+
+            <div class="panel">
+                <strong>Headers</strong>
+                <pre id="headers">—</pre>
+            </div>
+        </div>
+
+        <div class="col-right">
+            <div class="panel">
+                <img id="image" src="" alt="Dashboard">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const STORAGE_KEY_LAT = 'tablet_test_lat';
+            const STORAGE_KEY_LON = 'tablet_test_lon';
+
+            const latInput = document.getElementById('lat');
+            const lonInput = document.getElementById('lon');
+            const btnStart = document.getElementById('btnStart');
+            const btnReset = document.getElementById('btnReset');
+            const statusEl = document.getElementById('status');
+            const headersEl = document.getElementById('headers');
+            const countdownEl = document.getElementById('countdown');
+            const imageEl = document.getElementById('image');
+
+            latInput.value = localStorage.getItem(STORAGE_KEY_LAT) ?? '';
+            lonInput.value = localStorage.getItem(STORAGE_KEY_LON) ?? '';
+
+            function saveLatLon() {
+                localStorage.setItem(STORAGE_KEY_LAT, latInput.value.trim());
+                localStorage.setItem(STORAGE_KEY_LON, lonInput.value.trim());
+            }
+
+            latInput.addEventListener('change', saveLatLon);
+            lonInput.addEventListener('change', saveLatLon);
+
+            let pollIntervalId = null;
+            let countdownIntervalId = null;
+            let lastHash = null;
+            let pollIntervalSec = 0;
+            let countdownRemaining = 0;
+
+            function getKey() {
+                const params = new URLSearchParams(window.location.search);
+                return params.get('key') || '';
+            }
+
+            function setStatus(text, isError = false) {
+                statusEl.textContent = text;
+                statusEl.className = isError ? 'error' : 'ok';
+            }
+
+            function setHeaders(headers) {
+                if (!headers) {
+                    headersEl.textContent = '—';
+                    return;
+                }
+                const lines = [];
+                headers
+                    .forEach((v, k) => {
+                        if ([ 'x-poll-interval', 'x-image-hash', 'x-update-type' ].includes(k.toLowerCase())) {
+                            lines.push(`${k}: ${v}`);
+                        }
+                    });
+                headersEl.textContent = lines.length ? lines.join('\n') : '—';
+            }
+
+            function showImage(blobOrUrl) {
+                imageEl.src = '';
+                imageEl.src = typeof blobOrUrl === 'string' ? blobOrUrl : URL.createObjectURL(blobOrUrl);
+            }
+
+            function clearImage() {
+                if (imageEl.src && imageEl.src.startsWith('blob:')) URL.revokeObjectURL(imageEl.src);
+                imageEl.src = '';
+            }
+
+            const IMG_WIDTH = 800;
+            const IMG_HEIGHT = 480;
+
+            /**
+             * Unpack raw 1-bit monochrome bytes to ImageData.
+             * Format: 8 horizontal pixels per byte, row-major, MSB=leftmost. 0=black, 1=white.
+             */
+            function unpack1BitToImageData(ctx, bytes, width, height) {
+                const alignedWidthBytes = Math.ceil(width / 8);
+                const imageData = ctx.createImageData(width, height);
+                const data = imageData.data;
+                for (let y = 0; y < height; y++) {
+                    for (let byteX = 0; byteX < alignedWidthBytes; byteX++) {
+                        const byte = bytes[y * alignedWidthBytes + byteX];
+                        for (let bit = 0; bit < 8; bit++) {
+                            const px = byteX * 8 + bit;
+                            if (px >= width) break;
+                            const isWhite = (byte & (1 << (7 - bit))) !== 0;
+                            const val = isWhite ? 255 : 0;
+                            const idx = (y * width + px) * 4;
+                            data[idx] = data[idx + 1] = data[idx + 2] = val;
+                            data[idx + 3] = 255;
+                        }
+                    }
+                }
+                return imageData;
+            }
+
+            async function applyPartialRegions(data) {
+                if (!data?.regions || !Array.isArray(data.regions) || data.regions.length === 0) return;
+                const canvas = document.createElement('canvas');
+                canvas.width = IMG_WIDTH;
+                canvas.height = IMG_HEIGHT;
+                const ctx = canvas.getContext('2d');
+
+                if (imageEl.src && imageEl.complete) {
+                    ctx.drawImage(imageEl, 0, 0);
+                } else {
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(0, 0, IMG_WIDTH, IMG_HEIGHT);
+                }
+
+                for (const region of data.regions) {
+                    const { x1, y1, x2, y2, data: base64Data } = region;
+                    if (x1 == null || y1 == null || x2 == null || y2 == null || !base64Data) continue;
+                    const w = x2 - x1;
+                    const h = y2 - y1;
+                    if (w <= 0 || h <= 0) continue;
+                    const rawBase64 = base64Data.startsWith('data:') ? base64Data.split(',')[1] : base64Data;
+                    const binary = atob(rawBase64);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                    const imageData = unpack1BitToImageData(ctx, bytes, w, h);
+                    ctx.putImageData(imageData, x1, y1);
+                }
+
+                if (imageEl.src && imageEl.src.startsWith('blob:')) URL.revokeObjectURL(imageEl.src);
+                imageEl.src = canvas.toDataURL('image/png');
+            }
+
+            function startCountdown(seconds) {
+                if (countdownIntervalId) clearInterval(countdownIntervalId);
+                pollIntervalSec = seconds;
+                countdownRemaining = seconds;
+                countdownEl.textContent = `Next request in ${countdownRemaining}s`;
+
+                countdownIntervalId = setInterval(() => {
+                    countdownRemaining--;
+                    countdownEl.textContent = `Next request in ${countdownRemaining}s`;
+                    if (countdownRemaining <= 0) {
+                        clearInterval(countdownIntervalId);
+                        countdownIntervalId = null;
+                        countdownEl.textContent = '';
+                        doRequest();
+                    }
+                }, 1000);
+            }
+
+            function stopPolling() {
+                if (pollIntervalId) clearInterval(pollIntervalId);
+                pollIntervalId = null;
+                if (countdownIntervalId) clearInterval(countdownIntervalId);
+                countdownIntervalId = null;
+                countdownEl.textContent = '';
+            }
+
+            async function doRequest() {
+                const key = getKey();
+                const lat = latInput.value?.trim();
+                const lon = lonInput.value?.trim();
+
+                if (!key) {
+                    setStatus('Error: No key in URL. Use /tablet/?key=<tablet_key>', true);
+                    return;
+                }
+                if (!lat || !lon) {
+                    setStatus('Error: lat and lon are required.', true);
+                    return;
+                }
+
+                const url = new URL('/tablet/dashboard/', window.location.origin);
+                url.searchParams.set('key', key);
+                url.searchParams.set('lat', lat);
+                url.searchParams.set('lon', lon);
+                if (lastHash) url.searchParams.set('lastHash', lastHash);
+
+                setStatus(`Requesting ${url.pathname}${url.search}...`);
+
+                try {
+                    const resp = await fetch(url, { method: 'GET' });
+                    const headers = resp.headers;
+                    const pollIntervalHeader = headers.get('X-Poll-Interval');
+                    const imageHash = headers.get('X-Image-Hash');
+                    const updateType = headers.get('X-Update-Type');
+
+                    if (imageHash) lastHash = imageHash;
+                    setHeaders(headers);
+
+                    const contentType = headers.get('Content-Type') || '';
+
+                    if (resp.ok) {
+                        if (resp.status === 204) {
+                            setStatus(`204 No Content (skip). X-Update-Type: ${updateType || '—'}`);
+                            // Keep previous image
+                        } else if (contentType.includes('image/')) {
+                            const blob = await resp.blob();
+                            showImage(blob);
+                            setStatus(`200 OK — Image received (${updateType || 'full'})`);
+                        } else if (contentType.includes('application/json')) {
+                            const data = await resp.json();
+                            await applyPartialRegions(data);
+                            const regionCount = data?.regions?.length ?? 0;
+                            setStatus(`200 OK — Partial update: ${regionCount} region(s) applied`);
+                        } else {
+                            const text = await resp.text();
+                            setStatus(`200 OK — ${text || '(empty)'}`);
+                        }
+                    } else {
+                        let errBody = '';
+                        try {
+                            const data = await resp.json();
+                            errBody = JSON.stringify(data, null, 2);
+                        } catch {
+                            errBody = await resp.text();
+                        }
+                        setStatus(`HTTP ${resp.status} ${resp.statusText}\n${errBody}`, true);
+                    }
+
+                    const intervalSec = pollIntervalHeader ? parseInt(pollIntervalHeader, 10) : 60;
+                    if (!isNaN(intervalSec) && intervalSec > 0) {
+                        startCountdown(intervalSec);
+                    }
+                } catch (e) {
+                    setStatus(`Error: ${e.message}`, true);
+                    setHeaders(null);
+                }
+            }
+
+            btnStart.addEventListener('click', () => {
+                const lat = latInput.value?.trim();
+                const lon = lonInput.value?.trim();
+                if (!lat || !lon) {
+                    setStatus('Please enter both lat and lon.', true);
+                    return;
+                }
+                const key = getKey();
+                if (!key) {
+                    setStatus('No key in URL. Use /tablet/?key=<tablet_key>', true);
+                    return;
+                }
+
+                saveLatLon();
+                lastHash = null;
+                btnStart.disabled = true;
+                stopPolling();
+                clearImage();
+                doRequest();
+            });
+
+            btnReset.addEventListener('click', () => {
+                stopPolling();
+                lastHash = null;
+                btnStart.disabled = false;
+                clearImage();
+                setStatus('Enter lat/lon and click Start.');
+                setHeaders(null);
+                countdownEl.textContent = '';
+            });
+        })();
+    </script>
+</body>
+</html>

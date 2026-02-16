@@ -18,14 +18,26 @@ from PIL import Image
 from .fetch_bus_info import get_bus_info, get_latest_bus_data, invalidate_bus_session, refresh_map_with_session_restore, create_bus_session
 from .models import BusSession, BusData, BusDashboardSkip
 from .bus_image_renderer import render_icon_at_coordinates
-from .weather import get_hourly_forecast, get_weekly_forecast
+from .weather import render_weather_chart_bmp
 from .svg_to_bmp import render_svg_to_bmp
+from constance import config
 
 logger = logging.getLogger(__name__)
+
+# Header name for poll interval (seconds to wait before next request)
+X_POLL_INTERVAL_HEADER = "X-Poll-Interval"
+
+
+def _add_poll_interval_header(response, interval):
+    """Add X-Poll-Interval header to the response."""
+    response[X_POLL_INTERVAL_HEADER] = str(interval)
+    return response
 
 # In-memory cache for storing recent bus images by hash
 # Format: {hash_string: image_bytes}
 _bus_image_cache = {}
+# In-memory cache for storing recent weather images by hash
+_weather_image_cache = {}
 # Maximum number of images to keep in cache
 _MAX_CACHE_SIZE = 3
 
@@ -57,12 +69,9 @@ def bus_view(request):
     """
     # Check if key is provided and matches TABLET_KEY environment variable
     key = request.GET.get('key')
-    if not key:
-        return JsonResponse({'error': 'Not found'}, status=404)
-
     tablet_key = os.getenv('TABLET_KEY')
-    if not tablet_key or key != tablet_key:
-        return JsonResponse({'error': 'Not found'}, status=404)
+    if not key or not tablet_key or key != tablet_key:
+        return _add_poll_interval_header(JsonResponse({'error': 'Not found'}, status=404), config.TABLET_BUS_POLL_INTERVAL)
 
     try:
         # Check if there's an existing BusSession (there should only be 1 record)
@@ -164,7 +173,7 @@ def bus_view(request):
                                     response = HttpResponse(status=204)
                                     response['X-Update-Type'] = 'skip'
                                     response['X-Image-Hash'] = current_hash
-                                    return response
+                                    return _add_poll_interval_header(response, config.TABLET_BUS_POLL_INTERVAL)
                                 elif result_type == 'partial':
                                     # Partial refresh - return changed regions
                                     regions, changed_count, total_pixels = data
@@ -175,7 +184,7 @@ def bus_view(request):
                                     response = JsonResponse(response_data, content_type='application/json')
                                     response['X-Update-Type'] = 'partial'
                                     response['X-Image-Hash'] = current_hash
-                                    return response
+                                    return _add_poll_interval_header(response, config.TABLET_BUS_POLL_INTERVAL)
                                 else:
                                     # result_type == 'full' - too many changes, return full refresh
                                     logger.info(f"bus_view: Comparison returned 'full', returning full refresh")
@@ -183,7 +192,7 @@ def bus_view(request):
                                     response['X-Update-Type'] = 'full'
                                     response['X-Image-Hash'] = current_hash
                                     response['Content-Disposition'] = f'inline; filename="bus_map_{lat}_{lon}.bmp"'
-                                    return response
+                                    return _add_poll_interval_header(response, config.TABLET_BUS_POLL_INTERVAL)
                             else:
                                 logger.warning(f"bus_view: lastHash {last_hash[:16]}... not found in cache. Cache keys: {[h[:8] + '...' for h in list(_bus_image_cache.keys())]}")
 
@@ -196,28 +205,28 @@ def bus_view(request):
                         response['X-Update-Type'] = 'full'
                         response['X-Image-Hash'] = current_hash
                         response['Content-Disposition'] = f'inline; filename="bus_map_{lat}_{lon}.bmp"'
-                        return response
+                        return _add_poll_interval_header(response, config.TABLET_BUS_POLL_INTERVAL)
 
         # Add error message if request was not successful
         if not bus_data.request_successful and bus_data.error_message:
             response_data['error_message'] = bus_data.error_message
 
-        return JsonResponse(response_data)
+        return _add_poll_interval_header(JsonResponse(response_data), config.TABLET_BUS_POLL_INTERVAL)
 
     except ValueError as e:
         # This typically means missing environment variables
         logger.error(f"Configuration error for bus view: {e}")
-        return JsonResponse({
+        return _add_poll_interval_header(JsonResponse({
             'error': 'Bus service configuration error',
             'details': str(e)
-        }, status=500)
+        }, status=500), config.TABLET_BUS_POLL_INTERVAL)
 
     except Exception as e:
         logger.error(f"Error in bus view for key {key}", e)
-        return JsonResponse({
+        return _add_poll_interval_header(JsonResponse({
             'error': 'Failed to fetch bus information',
             'details': str(e)
-        }, status=500)
+        }, status=500), config.TABLET_BUS_POLL_INTERVAL)
 
 
 @require_http_methods(["GET"])
@@ -237,11 +246,8 @@ def test_bus(request, num):
     """
     # Check if key is provided and matches TABLET_KEY environment variable
     key = request.GET.get('key')
-    if not key:
-        return JsonResponse({'error': 'Not found'}, status=404)
-
     tablet_key = os.getenv('TABLET_KEY')
-    if not tablet_key or key != tablet_key:
+    if not key or not tablet_key or key != tablet_key:
         return JsonResponse({'error': 'Not found'}, status=404)
 
     if num not in (1, 2):
@@ -687,354 +693,100 @@ def weather_view(request):
     Get weather information and render an SVG chart showing hourly temperature forecast.
     Returns a BMP image (converted from SVG) with a grayscale temperature chart (800x480 pixels).
     Fetches exactly 24 hours of hourly forecast data.
+    Supports skip when unchanged (same hour) via lastHash comparison.
+    When the image changes, always returns full refresh (no partial).
 
     Query parameters:
+    - key: Required. Must match TABLET_KEY environment variable.
     - lat: Required. Latitude coordinate (float)
     - lon: Required. Longitude coordinate (float)
+    - lastHash: Optional. Hash of the previous image to skip refresh when unchanged.
+
+    Returns:
+    - Full refresh: BMP image with X-Update-Type: full, X-Image-Hash headers
+    - Skip: 204 No Content with X-Update-Type: skip, X-Image-Hash headers (when unchanged)
     """
     # Check if key is provided and matches TABLET_KEY environment variable
     key = request.GET.get('key')
-    if not key:
-        return JsonResponse({'error': 'Not found'}, status=404)
-
     tablet_key = os.getenv('TABLET_KEY')
-    if not tablet_key or key != tablet_key:
-        return JsonResponse({'error': 'Not found'}, status=404)
+    if not key or not tablet_key or key != tablet_key:
+        return _add_poll_interval_header(JsonResponse({'error': 'Not found'}, status=404), config.TABLET_WEATHER_POLL_INTERVAL)
 
     try:
+        # Get lat/lon from query parameters (required for cache key)
+        lat_str = request.GET.get('lat')
+        lon_str = request.GET.get('lon')
+
+        if not lat_str or not lon_str:
+            return _add_poll_interval_header(JsonResponse({
+                'error': 'Missing required parameters: Both lat and lon parameters are required'
+            }, status=400), config.TABLET_WEATHER_POLL_INTERVAL)
+
+        try:
+            lat = float(lat_str)
+            lon = float(lon_str)
+        except ValueError:
+            return _add_poll_interval_header(JsonResponse({
+                'error': 'Invalid coordinate format: lat and lon must be valid floating point numbers'
+            }, status=400), config.TABLET_WEATHER_POLL_INTERVAL)
+
         # Check cache FIRST before any API calls or processing
         # Set up cache directory and filename
-        # Use timezone-aware current time to match forecast datetimes
         current_time = timezone.now()
         current_file = Path(__file__).resolve()
         cache_dir = current_file.parent / 'cache' / 'weather_bmp'
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate filename with date and hour (e.g., weather_chart_2024-01-15_14.bmp)
+        # Generate filename with date, hour, and rounded lat/lon (e.g., weather_chart_2024-01-15_14_40.71_-74.01.bmp)
         date_hour_str = current_time.strftime('%Y-%m-%d_%H')
-        cache_filename = f'weather_chart_{date_hour_str}.bmp'
+        lat_rounded = round(lat, 2)
+        lon_rounded = round(lon, 2)
+        cache_filename = f'weather_chart_{date_hour_str}_{lat_rounded}_{lon_rounded}.bmp'
         cache_filepath = cache_dir / cache_filename
 
-        # Check if cached file exists for current hour
-        if False: #cache_filepath.exists():
+        # Check if cached file exists for current hour and coordinates
+        if cache_filepath.exists():
             try:
-                # Read and return cached file
                 with open(cache_filepath, 'rb') as f:
                     cached_bmp_bytes = f.read()
                 logger.info(f"Returning cached BMP file: {cache_filename}")
+
+                # Apply same hash/cache/skip logic as for newly generated images
+                current_hash = _generate_image_hash(cached_bmp_bytes)
+                _weather_image_cache[current_hash] = cached_bmp_bytes
+                if len(_weather_image_cache) > _MAX_CACHE_SIZE:
+                    oldest_key = next(iter(_weather_image_cache))
+                    del _weather_image_cache[oldest_key]
+
+                last_hash = request.GET.get('lastHash')
+                if last_hash and last_hash in _weather_image_cache and current_hash == last_hash:
+                    response = HttpResponse(status=204)
+                    response['X-Update-Type'] = 'skip'
+                    response['X-Image-Hash'] = current_hash
+                    return _add_poll_interval_header(response, config.TABLET_WEATHER_POLL_INTERVAL)
+
                 response = HttpResponse(cached_bmp_bytes, content_type='image/bmp')
-                # Note: lat/lon not available yet, but cache is based on time only
+                response['X-Update-Type'] = 'full'
+                response['X-Image-Hash'] = current_hash
                 response['Content-Disposition'] = f'inline; filename="{cache_filename}"'
-                return response
+                return _add_poll_interval_header(response, config.TABLET_WEATHER_POLL_INTERVAL)
             except Exception as e:
                 logger.warning(f"Error reading cached file {cache_filename}: {e}, will regenerate")
 
         # Get Tomorrow.io API key from environment
         api_key = os.getenv('TOMORROW_IO_API_KEY')
         if not api_key:
-            return HttpResponse(
-                '<html><body><h1>Error</h1><p>Weather service configuration error: Tomorrow.io API key not configured</p></body></html>',
-                status=500,
-                content_type='text/html'
-            )
+            return _add_poll_interval_header(JsonResponse({
+                'error': 'Weather service configuration error: Tomorrow.io API key not configured'
+            }, status=500), config.TABLET_WEATHER_POLL_INTERVAL)
 
-        # Get lat/lon from query parameters
-        lat_str = request.GET.get('lat')
-        lon_str = request.GET.get('lon')
+        bmp_bytes, context = render_weather_chart_bmp(lat, lon, api_key)
+        if not bmp_bytes and not context:
+            return _add_poll_interval_header(JsonResponse({
+                'error': 'Failed to fetch hourly forecast'
+            }, status=500), config.TABLET_WEATHER_POLL_INTERVAL)
 
-        if not lat_str or not lon_str:
-            return HttpResponse(
-                '<html><body><h1>Error</h1><p>Missing required parameters: Both lat and lon parameters are required</p></body></html>',
-                status=400,
-                content_type='text/html'
-            )
-
-        try:
-            lat = float(lat_str)
-            lon = float(lon_str)
-        except ValueError:
-            return HttpResponse(
-                '<html><body><h1>Error</h1><p>Invalid coordinate format: lat and lon must be valid floating point numbers</p></body></html>',
-                status=400,
-                content_type='text/html'
-            )
-
-        # Get hourly forecast (24 hours)
-        hourly_forecast = get_hourly_forecast(lat, lon, api_key)
-
-        if not hourly_forecast:
-            return HttpResponse(
-                '<html><body><h1>Error</h1><p>Failed to fetch hourly forecast</p></body></html>',
-                status=500,
-                content_type='text/html'
-            )
-
-        # Get weekly forecast
-        weekly_forecast = get_weekly_forecast(lat, lon, api_key)
-
-        # Find current temperature from first or second hourly forecast (whichever is closer to current time)
-        current_temp = None
-        if hourly_forecast and len(hourly_forecast) >= 2:
-            # Parse first two forecast times
-            try:
-                dt1_str = hourly_forecast[0]['datetime']
-                dt1_str_clean = dt1_str.replace('Z', '+00:00')
-                dt1 = datetime.fromisoformat(dt1_str_clean)
-
-                dt2_str = hourly_forecast[1]['datetime']
-                dt2_str_clean = dt2_str.replace('Z', '+00:00')
-                dt2 = datetime.fromisoformat(dt2_str_clean)
-
-                # Calculate time differences
-                diff1 = abs((dt1 - current_time).total_seconds())
-                diff2 = abs((dt2 - current_time).total_seconds())
-
-                # Use whichever is closer
-                if diff1 <= diff2:
-                    current_temp = hourly_forecast[0]['temperature']
-                else:
-                    current_temp = hourly_forecast[1]['temperature']
-            except Exception as e:
-                logger.warning(f"Failed to parse forecast times for current temp: {e}")
-                # Fallback to first forecast
-                current_temp = hourly_forecast[0].get('temperature')
-        elif hourly_forecast:
-            current_temp = hourly_forecast[0].get('temperature')
-
-        # Format current date (e.g., "Thursday, March 13")
-        current_date_str = current_time.strftime('%A, %B %d')
-
-        # Get current weather icon SVG (placeholder for now - can be enhanced later)
-        # For now, use an empty string or simple SVG icon
-        current_weather_icon_svg = ''  # Can be populated with actual weather icon SVG based on weatherCode
-
-        # Extract temperatures, UV index, precipitation probability, and times from forecast
-        temperatures = [item['temperature'] for item in hourly_forecast]
-        uv_indices = [item.get('uv_index', 0) for item in hourly_forecast]
-        precipitation_probabilities = [item.get('precipitation_probability', 0) for item in hourly_forecast]
-        datetimes = [item['datetime'] for item in hourly_forecast]
-
-        # Parse datetime strings to extract hour labels
-        hour_labels = []
-        datetime_objects = []
-        for dt_str in datetimes:
-            try:
-                # Handle ISO format datetime strings (e.g., "2026-01-04T23:00:00-05:00")
-                dt_str_clean = dt_str.replace('Z', '+00:00')
-                dt = datetime.fromisoformat(dt_str_clean)
-                datetime_objects.append(dt)
-                # Format as 12-hour time with AM/PM (e.g., "3 AM", "6 PM")
-                hour_12 = dt.hour % 12
-                if hour_12 == 0:
-                    hour_12 = 12
-                am_pm = 'AM' if dt.hour < 12 else 'PM'
-                hour_labels.append(f"{hour_12} {am_pm}")
-            except Exception as e:
-                logger.warning(f"Failed to parse datetime {dt_str}: {e}")
-                datetime_objects.append(None)
-                hour_labels.append('')
-
-        # Calculate chart dimensions
-        chart_width = 600  # Charts are now 600px wide
-        total_height = 480  # Total height exactly 480px
-        sidebar_width = 200
-        sidebar_height = total_height / 2
-        total_width = sidebar_width + chart_width  # Total width is 800px
-        x_axis_label_height = 30  # Space for x-axis labels
-        hourly_chart_height = 230  # Hourly chart height (half of total)
-        weekly_chart_height = 230  # Weekly chart height (half of total)
-        chart_margin_y = total_height - hourly_chart_height - weekly_chart_height
-        hourly_padding_width = 20
-        plot_width = chart_width - 2 * hourly_padding_width  # Use chart_width instead of total_width
-        # Plot height is chart height minus x-axis label space
-        plot_height = hourly_chart_height - x_axis_label_height  # 210px for hourly chart
-
-        # Calculate derived values needed for chart generation
-        x_axis_start = sidebar_width  # Charts start after sidebar
-        x_axis_end = sidebar_width + chart_width  # Charts end at sidebar + chart width
-        hourly_chart_offset_y = 0  # No title, starts at top
-        y_axis_end = hourly_chart_offset_y + plot_height  # End of plot area
-
-        # Calculate average temperature and center y-axis on it with 50-degree range
-        avg_temp = sum(temperatures) / len(temperatures) if temperatures else 50
-        temp_range = 50
-        min_temp = avg_temp - 25
-        max_temp = avg_temp + 25
-
-        # Generate SVG chart path
-        points = []
-        temp_points = []  # Store temp and coordinates for finding min/max
-        for i, temp in enumerate(temperatures):
-            x = sidebar_width + hourly_padding_width + (i / (len(temperatures) - 1)) * plot_width if len(temperatures) > 1 else sidebar_width + hourly_padding_width + plot_width / 2
-            # Invert y-axis (SVG y increases downward)
-            y = hourly_chart_offset_y + plot_height - ((temp - min_temp) / temp_range) * plot_height
-            points.append(f"{x},{y}")
-            temp_points.append({'x': x, 'y': y, 'temp': temp})
-
-        path_data = f"M {points[0]} " + " ".join([f"L {point}" for point in points[1:]])
-
-        # Find min and max temperature points
-        min_temp_point = min(temp_points, key=lambda p: p['temp'])
-        max_temp_point = max(temp_points, key=lambda p: p['temp'])
-
-        # Calculate label positions (8 pixels above the point); round to integers so
-        # text lands on the pixel grid and renders consistently in 1-bit BMP.
-        min_temp_label = {
-            'x': round(min_temp_point['x']),
-            'y': round(min_temp_point['y'] - 8),
-            'temp': int(round(min_temp_point['temp']))
-        }
-        max_temp_label = {
-            'x': round(max_temp_point['x']),
-            'y': round(max_temp_point['y'] - 8),
-            'temp': int(round(max_temp_point['temp']))
-        }
-
-        # Generate UV index shaded area using secondary y-axis (0-11 range)
-        uv_max = 11
-        uv_min = 0
-        uv_range = uv_max - uv_min
-        uv_points = []
-        uv_points_with_data = []
-        for i, uv_index in enumerate(uv_indices):
-            x = sidebar_width + hourly_padding_width + (i / (len(uv_indices) - 1)) * plot_width if len(uv_indices) > 1 else sidebar_width + hourly_padding_width + plot_width / 2
-            # UV index uses same x positions but different y scale (0-11 mapped to plot_height)
-            # Invert y-axis (SVG y increases downward)
-            y = hourly_chart_offset_y + plot_height - ((uv_index - uv_min) / uv_range) * plot_height
-            uv_points.append(f"{x},{y}")
-            uv_points_with_data.append({'x': x, 'y': y, 'uv_index': uv_index})
-
-        # Create UV index area path (shaded area, no line)
-        uv_path_data = f"M {sidebar_width + hourly_padding_width},{y_axis_end} "  # Start at bottom-left
-        uv_path_data += f"L {uv_points[0]} "  # Move to first UV point
-        uv_path_data += " ".join([f"L {point}" for point in uv_points[1:]])  # Draw line through all UV points
-        uv_path_data += f" L {x_axis_end},{y_axis_end} Z"  # Close the path to bottom-right
-
-        # Find peak UV index point
-        peak_uv_point = max(uv_points_with_data, key=lambda p: p['uv_index'])
-        peak_uv_label = {
-            'x': round(peak_uv_point['x']),
-            'y': round(peak_uv_point['y'] - 8),
-            'uv_index': int(round(peak_uv_point['uv_index']))
-        }
-
-        # Generate precipitation probability dotted line using third y-axis (0-100 range)
-        # Only render if there are non-zero values
-        precip_max = 100
-        precip_min = 0
-        precip_range = precip_max - precip_min
-
-        # Check if there are any non-zero precipitation probabilities
-        has_precipitation = any(p > 0 for p in precipitation_probabilities)
-
-        if has_precipitation:
-            precip_points = []
-            for i, precip_prob in enumerate(precipitation_probabilities):
-                x = sidebar_width + hourly_padding_width + (i / (len(precipitation_probabilities) - 1)) * plot_width if len(precipitation_probabilities) > 1 else sidebar_width + hourly_padding_width + plot_width / 2
-                # Precipitation probability uses same x positions but different y scale (0-100 mapped to plot_height)
-                # Invert y-axis (SVG y increases downward)
-                y = hourly_chart_offset_y + plot_height - ((precip_prob - precip_min) / precip_range) * plot_height
-                precip_points.append(f"{x},{y}")
-
-            # Create precipitation probability line path (dotted line)
-            precip_path_data = f"M {precip_points[0]} " + " ".join([f"L {point}" for point in precip_points[1:]])
-        else:
-            precip_path_data = None
-
-        # Prepare grid lines data (50-degree range centered on average)
-        # Note: Y-axis labels removed per requirements
-        num_grid_lines = 5
-        grid_lines = []
-        for i in range(num_grid_lines + 1):
-            y_pos = hourly_chart_offset_y + (i / num_grid_lines) * plot_height
-            grid_lines.append({
-                'y_pos': y_pos
-            })
-
-        # Prepare hour labels with x positions (only every 3 hours)
-        hour_labels_with_pos = []
-        for i, (label, dt_obj) in enumerate(zip(hour_labels, datetime_objects)):
-            # Only show labels for hours divisible by 3 (0, 3, 6, 9, 12, 15, 18, 21)
-            if dt_obj is not None and dt_obj.hour % 3 == 0:
-                x_pos = sidebar_width + hourly_padding_width + (i / (len(hour_labels) - 1)) * plot_width if len(hour_labels) > 1 else sidebar_width + hourly_padding_width + plot_width / 2
-                hour_labels_with_pos.append({
-                    'label': label,
-                    'x_pos': round(x_pos)
-                })
-
-        # Calculate remaining derived values for template (round text positions for 1-bit consistency)
-        y_label_x = sidebar_width + hourly_padding_width - 10
-        x_label_y = round(y_axis_end + 20)
-
-        # Process weekly forecast data for second chart
-        weekly_chart_data = []
-        weekly_plot_padding_x = 40
-        weekly_plot_padding_y = 20
-        weekly_plot_height = weekly_chart_height - x_axis_label_height - (2 * weekly_plot_padding_y)
-        weekly_plot_width = chart_width - (2 * weekly_plot_padding_x)  # Use chart_width instead of total_width
-        # Weekly chart starts after hourly chart
-        weekly_chart_offset_y = hourly_chart_height + weekly_plot_padding_y + chart_margin_y
-
-        if weekly_forecast:
-            # Find min and max temps across all days for scaling
-            all_temps = []
-            for day in weekly_forecast:
-                if day.get('low_temp') is not None:
-                    all_temps.append(day['low_temp'])
-                if day.get('high_temp') is not None:
-                    all_temps.append(day['high_temp'])
-
-            if all_temps:
-                weekly_min_temp = min(all_temps)
-                weekly_max_temp = max(all_temps)
-                weekly_temp_range = weekly_max_temp - weekly_min_temp if weekly_max_temp != weekly_min_temp else 1
-            else:
-                weekly_min_temp = 0
-                weekly_max_temp = 100
-                weekly_temp_range = 100
-
-            # Process each day
-            for i, day in enumerate(weekly_forecast):
-                day_name = day.get('name', '')
-                low_temp = day.get('low_temp')
-                high_temp = day.get('high_temp')
-
-                if low_temp is not None and high_temp is not None:
-                    # Calculate x position (centered in each day's slot) - add sidebar offset
-                    x_pos = sidebar_width + weekly_plot_padding_x + (i / (len(weekly_forecast) - 1)) * weekly_plot_width if len(weekly_forecast) > 1 else sidebar_width + weekly_plot_padding_x + weekly_plot_width / 2
-
-                    # Calculate y positions (invert y-axis) - add offset for second chart
-                    low_y = weekly_chart_offset_y + weekly_plot_height - ((low_temp - weekly_min_temp) / weekly_temp_range) * weekly_plot_height
-                    high_y = weekly_chart_offset_y + weekly_plot_height - ((high_temp - weekly_min_temp) / weekly_temp_range) * weekly_plot_height
-
-                    # Pill shape dimensions (Apple-style)
-                    pill_width = 24
-                    pill_half_width = pill_width / 2
-                    pill_height = abs(high_y - low_y)
-
-                    # Pill position (centered on x_pos, spanning from low_y to high_y)
-                    pill_x = x_pos - pill_half_width
-                    pill_y = min(low_y, high_y)  # Use min since SVG y increases downward
-                    pill_radius = pill_half_width  # Fully rounded ends for pill shape
-
-                    weekly_chart_data.append({
-                        'day_name': day_name,
-                        'x_pos': round(x_pos),
-                        'low_temp': int(round(low_temp)),
-                        'high_temp': int(round(high_temp)),
-                        'low_y': low_y,
-                        'high_y': high_y,
-                        'pill_x': pill_x,
-                        'pill_y': pill_y,
-                        'pill_width': pill_width,
-                        'pill_height': pill_height,
-                        'pill_radius': pill_radius,
-                        'low_label_y': round(low_y + 20),   # Label below the low point
-                        'high_label_y': round(high_y - 5),   # Label above the high point
-                        'day_label_y': round(weekly_chart_offset_y + weekly_plot_height + (x_axis_label_height * 1.5)),
-                    })
-
-        # Check for any existing cached files that don't match current hour and delete them
+        # Clean up old cached files
         try:
             for existing_file in cache_dir.glob('weather_chart_*.bmp'):
                 if existing_file.name != cache_filename:
@@ -1046,41 +798,8 @@ def weather_view(request):
         except Exception as e:
             logger.warning(f"Error cleaning up old cache files: {e}")
 
-        # Prepare context for template
-        context = {
-            'total_width': total_width,
-            'chart_width': chart_width,
-            'sidebar_width': sidebar_width,
-            'sidebar_height': sidebar_height,
-            'chart_height': total_height,
-            'current_temp': int(round(current_temp)) if current_temp is not None else None,
-            'current_date': current_date_str,
-            'current_weather_icon_svg': current_weather_icon_svg,
-            'padding': hourly_padding_width,
-            'x_axis_start': x_axis_start,
-            'x_axis_end': x_axis_end,
-            'y_axis_end': y_axis_end,
-            'y_label_x': y_label_x,
-            'x_label_y': x_label_y,
-            'grid_lines': grid_lines,
-            'hour_labels': hour_labels_with_pos,
-            'path_data': path_data,
-            'min_temp_label': min_temp_label,
-            'max_temp_label': max_temp_label,
-            'uv_path_data': uv_path_data,
-            'peak_uv_label': peak_uv_label,
-            'precip_path_data': precip_path_data,
-            'weekly_chart_data': weekly_chart_data,
-            'weekly_chart_height': weekly_chart_height,
-            'weekly_padding': weekly_plot_padding_x,
-            'weekly_y_axis_end': weekly_chart_offset_y + weekly_plot_height + x_axis_label_height,
-            'weekly_chart_offset_y': weekly_chart_offset_y,
-            'x_axis_label_height': x_axis_label_height,
-        }
-
-        bmp_bytes = render_svg_to_bmp('tablet/weather_chart.svgt', context, width=int(total_width), height=int(total_height))
         if bmp_bytes:
-            # Save to cache
+            # Save to disk cache
             try:
                 with open(cache_filepath, 'wb') as f:
                     f.write(bmp_bytes)
@@ -1088,21 +807,88 @@ def weather_view(request):
             except Exception as e:
                 logger.warning(f"Error saving BMP to cache {cache_filename}: {e}")
 
+            # Generate hash and add to in-memory cache for skip-when-unchanged
+            current_hash = _generate_image_hash(bmp_bytes)
+            _weather_image_cache[current_hash] = bmp_bytes
+            if len(_weather_image_cache) > _MAX_CACHE_SIZE:
+                oldest_key = next(iter(_weather_image_cache))
+                del _weather_image_cache[oldest_key]
+
+            last_hash = request.GET.get('lastHash')
+            if last_hash and last_hash in _weather_image_cache and current_hash == last_hash:
+                response = HttpResponse(status=204)
+                response['X-Update-Type'] = 'skip'
+                response['X-Image-Hash'] = current_hash
+                return _add_poll_interval_header(response, config.TABLET_WEATHER_POLL_INTERVAL)
+
+            # Full refresh (no lastHash, hash not in cache, or image changed)
             response = HttpResponse(bmp_bytes, content_type='image/bmp')
+            response['X-Update-Type'] = 'full'
+            response['X-Image-Hash'] = current_hash
             response['Content-Disposition'] = f'inline; filename="weather_chart_{lat}_{lon}.bmp"'
-            return response
+            return _add_poll_interval_header(response, config.TABLET_WEATHER_POLL_INTERVAL)
 
         # Fallback to SVG if BMP rendering fails
         logger.warning("Failed to render SVG to BMP, falling back to SVG")
-        return render(request, 'tablet/weather_chart.svgt', context)
+        return _add_poll_interval_header(render(request, 'tablet/weather_chart.svgt', context), config.TABLET_WEATHER_POLL_INTERVAL)
 
     except Exception as e:
         logger.error(f"Error in weather view", e)
-        return HttpResponse(
-            f'<html><body><h1>Error</h1><p>Failed to fetch weather information: {str(e)}</p></body></html>',
-            status=500,
-            content_type='text/html'
-        )
+        return _add_poll_interval_header(JsonResponse({
+            'error': 'Failed to fetch weather information',
+            'details': str(e)
+        }, status=500), config.TABLET_WEATHER_POLL_INTERVAL)
+
+
+def get_dashboard_status():
+    """
+    Determine which dashboard to show based on current time and skip periods.
+
+    Returns 'bus' dashboard during specific time windows on weekdays:
+    - Morning: 6:48 AM to 6:55 AM
+    - Afternoon: 2:38 PM to 2:45 PM
+
+    Returns 'weather' dashboard at all other times.
+
+    Date ranges configured in BusDashboardSkip model will override and force 'weather'.
+
+    Returns:
+        str: 'bus' or 'weather'
+    """
+    # Get current time in America/New_York timezone
+    eastern_tz = ZoneInfo('America/New_York')
+    now_utc = timezone.now()
+    now_eastern = now_utc.astimezone(eastern_tz)
+
+    current_date = now_eastern.date()
+    current_time = now_eastern.time()
+    current_weekday = now_eastern.weekday()  # 0 = Monday, 6 = Sunday
+
+    # Check if current date falls within any skip periods
+    skip_periods = BusDashboardSkip.objects.filter(is_active=True)
+    for skip_period in skip_periods:
+        if skip_period.contains_date(current_date):
+            return 'weather'
+
+    # Check if it's a weekday (Monday = 0, Friday = 4)
+    is_weekday = current_weekday < 5
+
+    if not is_weekday:
+        return 'weather'
+
+    # Define bus time windows
+    morning_start = time(6, 48)  # 6:48 AM
+    morning_end = time(6, 55)    # 6:55 AM
+    afternoon_start = time(14, 38)  # 2:38 PM
+    afternoon_end = time(14, 45)    # 2:45 PM
+
+    # Check if current time is within bus windows
+    in_morning_window = morning_start <= current_time <= morning_end
+    in_afternoon_window = afternoon_start <= current_time <= afternoon_end
+
+    if in_morning_window or in_afternoon_window:
+        return 'bus'
+    return 'weather'
 
 
 @require_http_methods(["GET"])
@@ -1123,64 +909,22 @@ def status_view(request):
     """
     # Check if key is provided and matches TABLET_KEY environment variable
     key = request.GET.get('key')
-    if not key:
-        return JsonResponse({'error': 'Not found'}, status=404)
-
     tablet_key = os.getenv('TABLET_KEY')
-    if not tablet_key or key != tablet_key:
+    if not key or not tablet_key or key != tablet_key:
         return JsonResponse({'error': 'Not found'}, status=404)
 
     try:
-        # Get current time in America/New_York timezone
         eastern_tz = ZoneInfo('America/New_York')
-        now_utc = timezone.now()
-        now_eastern = now_utc.astimezone(eastern_tz)
+        now_eastern = timezone.now().astimezone(eastern_tz)
 
-        current_date = now_eastern.date()
-        current_time = now_eastern.time()
-        current_weekday = now_eastern.weekday()  # 0 = Monday, 6 = Sunday
-
-        # Check if current date falls within any skip periods
-        skip_periods = BusDashboardSkip.objects.filter(is_active=True)
-        is_skipped = False
-        for skip_period in skip_periods:
-            if skip_period.contains_date(current_date):
-                is_skipped = True
-                break
-
-        # Prepare response data with current time
         response_data = {
-            'dashboard': 'weather',
+            'dashboard': get_dashboard_status(),
             'current_time': now_eastern.isoformat(),
             'current_time_readable': now_eastern.strftime('%Y-%m-%d %I:%M:%S %p') + ' ' + str(eastern_tz),
             'timezone': 'America/New_York'
         }
 
-        # If date is in skip period, always return weather
-        if is_skipped:
-            return JsonResponse(response_data)
-
-        # Check if it's a weekday (Monday = 0, Friday = 4)
-        is_weekday = current_weekday < 5
-
-        if not is_weekday:
-            return JsonResponse(response_data)
-
-        # Define bus time windows
-        morning_start = time(6, 48)  # 6:48 AM
-        morning_end = time(6, 55)    # 6:55 AM
-        afternoon_start = time(14, 38)  # 2:38 PM
-        afternoon_end = time(14, 45)    # 2:45 PM
-
-        # Check if current time is within bus windows
-        in_morning_window = morning_start <= current_time <= morning_end
-        in_afternoon_window = afternoon_start <= current_time <= afternoon_end
-
-        if in_morning_window or in_afternoon_window:
-            response_data['dashboard'] = 'bus'
-            return JsonResponse(response_data)
-        else:
-            return JsonResponse(response_data)
+        return JsonResponse(response_data)
 
     except Exception as e:
         logger.error(f"Error in status view: {e}")
@@ -1188,3 +932,40 @@ def status_view(request):
             'error': 'Failed to get dashboard status',
             'details': str(e)
         }, status=500)
+
+
+@require_http_methods(["GET"])
+def test_client_view(request):
+    """
+    Serves the HTML test client page at /tablet/?key=<tablet_key>.
+    The page mimics real client behavior: polls /tablet/dashboard/ with lat/lon,
+    displays 800x480 image or error JSON, shows response headers and X-Poll-Interval countdown.
+    """
+    return render(request, 'tablet/test_client.html')
+
+
+@require_http_methods(["GET"])
+def dashboard_view(request):
+    """
+    Route to the appropriate dashboard (bus or weather) based on current status.
+
+    Delegates to bus_view during bus time windows on weekdays, weather_view otherwise.
+    Client should include lat/lon query params when the result may be weather.
+
+    Query parameters:
+    - key: Required. Must match TABLET_KEY environment variable.
+    - lat, lon: Required when weather dashboard is shown.
+    - lastHash: Optional. Passed through for partial refresh (bus) or skip-when-unchanged (weather).
+    - debug: Optional. Passed through to bus_view when applicable.
+    """
+    key = request.GET.get('key')
+    tablet_key = os.getenv('TABLET_KEY')
+    if not key or not tablet_key or key != tablet_key:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    status = get_dashboard_status()
+
+    if status == 'bus':
+        return bus_view(request)
+    else:
+        return weather_view(request)
