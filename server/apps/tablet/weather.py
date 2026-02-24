@@ -5,8 +5,11 @@ import os
 import textwrap
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.utils import timezone
+
+EASTERN_TZ = ZoneInfo('America/New_York')
 
 logger = logging.getLogger(__name__)
 
@@ -972,7 +975,7 @@ def render_weather_chart_bmp(lat: float, lon: float, api_key: str, note_text: st
     """
     from .svg_to_bmp import render_svg_to_bmp
 
-    current_time = timezone.now()
+    current_time = timezone.now().astimezone(EASTERN_TZ)
 
     # Get hourly forecast (24 hours)
     hourly_forecast = _get_hourly_forecast(lat, lon, api_key)

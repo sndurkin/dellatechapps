@@ -26,6 +26,8 @@ from constance import config
 
 logger = logging.getLogger(__name__)
 
+EASTERN_TZ = ZoneInfo('America/New_York')
+
 # Header name for poll interval (seconds to wait before next request)
 X_POLL_INTERVAL_HEADER = "X-Poll-Interval"
 
@@ -720,8 +722,7 @@ def _get_active_note():
         if not isinstance(notes, list):
             return None
 
-        eastern_tz = ZoneInfo('America/New_York')
-        now = datetime.now(eastern_tz)
+        now = timezone.now().astimezone(EASTERN_TZ)
 
         for note in notes:
             if not isinstance(note, dict):
