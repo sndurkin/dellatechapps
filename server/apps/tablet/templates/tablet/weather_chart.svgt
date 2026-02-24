@@ -89,6 +89,10 @@
             .current-date {
                 font-size: 18px;
             }
+            .note-text {
+                font-size: 14px;
+                text-anchor: middle;
+            }
         </style>
     </defs>
 
@@ -108,6 +112,15 @@
         <!-- Current date - below temperature -->
         <text x="100" y="180" class="sidebar-text current-date" text-anchor="middle">{{ current_date }}</text>
     </g>
+
+    <!-- Note text in bottom-left sidebar area -->
+    {% if note_lines %}
+    <g id="note">
+        {% for line in note_lines %}
+        <text x="100" y="{{ line.y }}" class="sidebar-text note-text">{{ line.text }}</text>
+        {% endfor %}
+    </g>
+    {% endif %}
 
     <!-- Grid lines -->
     <g id="y-axis">

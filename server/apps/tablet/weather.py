@@ -2,6 +2,7 @@ import logging
 import requests
 import json
 import os
+import textwrap
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 
@@ -956,7 +957,7 @@ def _get_precipitation_type(precip_type_code: int) -> str:
     return precip_types.get(precip_type_code, 'Unknown')
 
 
-def render_weather_chart_bmp(lat: float, lon: float, api_key: str) -> Tuple[Optional[bytes], Dict]:
+def render_weather_chart_bmp(lat: float, lon: float, api_key: str, note_text: str = None) -> Tuple[Optional[bytes], Dict]:
     """
     Fetch weather data and render the weather chart as BMP image bytes.
 
@@ -964,6 +965,7 @@ def render_weather_chart_bmp(lat: float, lon: float, api_key: str) -> Tuple[Opti
         lat: Latitude coordinate
         lon: Longitude coordinate
         api_key: Tomorrow.io API key
+        note_text: Optional note text to display in the bottom-left sidebar area
 
     Returns:
         Tuple of (BMP image bytes or None if rendering failed, template context for SVG fallback)
@@ -1197,6 +1199,22 @@ def render_weather_chart_bmp(lat: float, lon: float, api_key: str) -> Tuple[Opti
                     'day_label_y': round(weekly_chart_offset_y + weekly_plot_height + (x_axis_label_height * 1.5)),
                 })
 
+    # Word-wrap note text for the bottom-left sidebar area
+    note_lines = []
+    if note_text:
+        lines = textwrap.wrap(note_text, width=20)
+        line_height = 20
+        total_text_height = len(lines) * line_height
+        # Vertically center in the bottom-left empty space (y ≈ 200 to 480)
+        available_top = 200
+        available_bottom = total_height
+        start_y = available_top + (available_bottom - available_top - total_text_height) / 2
+        for i, line in enumerate(lines):
+            note_lines.append({
+                'text': line,
+                'y': round(start_y + i * line_height),
+            })
+
     context = {
         'total_width': total_width,
         'chart_width': chart_width,
@@ -1226,6 +1244,7 @@ def render_weather_chart_bmp(lat: float, lon: float, api_key: str) -> Tuple[Opti
         'weekly_y_axis_end': weekly_chart_offset_y + weekly_plot_height + x_axis_label_height,
         'weekly_chart_offset_y': weekly_chart_offset_y,
         'x_axis_label_height': x_axis_label_height,
+        'note_lines': note_lines,
     }
 
     bmp_bytes = render_svg_to_bmp('tablet/weather_chart.svgt', context, width=int(total_width), height=int(total_height))

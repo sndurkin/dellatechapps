@@ -8,13 +8,15 @@ from django.utils import timezone
 import logging
 import json
 import os
+import re
 import hashlib
 import base64
 import io
-from datetime import datetime, time, date
+from datetime import datetime, time, date, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from PIL import Image
+from croniter import croniter
 from .fetch_bus_info import get_bus_info, get_latest_bus_data, invalidate_bus_session, refresh_map_with_session_restore, create_bus_session
 from .models import BusSession, BusData, BusDashboardSkip
 from .bus_image_renderer import render_icon_at_coordinates
@@ -687,6 +689,70 @@ def _compare_images_and_find_regions(current_bytes, previous_bytes, threshold=0.
         return ('full', None)
 
 
+def _parse_duration(duration_str):
+    """Parse a human-readable duration string (e.g. '30 mins', '2 hours', '1 day') into a timedelta."""
+    duration_str = duration_str.strip().lower()
+    match = re.match(
+        r'^(\d+(?:\.\d+)?)\s*'
+        r'(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)$',
+        duration_str,
+    )
+    if not match:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2)
+    if unit in ('s', 'sec', 'secs', 'second', 'seconds'):
+        return timedelta(seconds=value)
+    if unit in ('m', 'min', 'mins', 'minute', 'minutes'):
+        return timedelta(minutes=value)
+    if unit in ('h', 'hr', 'hrs', 'hour', 'hours'):
+        return timedelta(hours=value)
+    if unit in ('d', 'day', 'days'):
+        return timedelta(days=value)
+    return None
+
+
+def _get_active_note():
+    """Return the first currently active note text from WEATHER_NOTES config, or None."""
+    try:
+        notes_json = config.WEATHER_NOTES
+        notes = json.loads(notes_json)
+        if not isinstance(notes, list):
+            return None
+
+        eastern_tz = ZoneInfo('America/New_York')
+        now = datetime.now(eastern_tz)
+
+        for note in notes:
+            if not isinstance(note, dict):
+                continue
+            text = note.get('note', '').strip()
+            cron_expr = note.get('cron', '').strip()
+            duration_str = note.get('duration', '').strip()
+
+            if not text or not cron_expr or not duration_str:
+                continue
+
+            duration = _parse_duration(duration_str)
+            if not duration:
+                logger.warning("Invalid duration in weather note: %s", duration_str)
+                continue
+
+            try:
+                cron = croniter(cron_expr, now)
+                prev_occurrence = cron.get_prev(datetime)
+                if prev_occurrence <= now <= prev_occurrence + duration:
+                    return text
+            except (ValueError, KeyError) as e:
+                logger.warning("Invalid cron expression in weather note '%s': %s", cron_expr, e)
+                continue
+
+        return None
+    except Exception as e:
+        logger.warning("Error parsing WEATHER_NOTES config: %s", e)
+        return None
+
+
 @require_http_methods(["GET"])
 def weather_view(request):
     """
@@ -730,6 +796,9 @@ def weather_view(request):
                 'error': 'Invalid coordinate format: lat and lon must be valid floating point numbers'
             }, status=400), config.TABLET_WEATHER_POLL_INTERVAL)
 
+        # Determine active note (if any) before cache check so it factors into the cache key
+        note_text = _get_active_note()
+
         # Check cache FIRST before any API calls or processing
         # Set up cache directory and filename
         current_time = timezone.now()
@@ -737,11 +806,12 @@ def weather_view(request):
         cache_dir = current_file.parent / 'cache' / 'weather_bmp'
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate filename with date, hour, and rounded lat/lon (e.g., weather_chart_2024-01-15_14_40.71_-74.01.bmp)
+        # Include note hash so cache invalidates when note state changes
         date_hour_str = current_time.strftime('%Y-%m-%d_%H')
         lat_rounded = round(lat, 2)
         lon_rounded = round(lon, 2)
-        cache_filename = f'weather_chart_{date_hour_str}_{lat_rounded}_{lon_rounded}.bmp'
+        note_hash = hashlib.md5((note_text or '').encode()).hexdigest()[:8]
+        cache_filename = f'weather_chart_{date_hour_str}_{lat_rounded}_{lon_rounded}_{note_hash}.bmp'
         cache_filepath = cache_dir / cache_filename
 
         # Check if cached file exists for current hour and coordinates
@@ -780,7 +850,7 @@ def weather_view(request):
                 'error': 'Weather service configuration error: Tomorrow.io API key not configured'
             }, status=500), config.TABLET_WEATHER_POLL_INTERVAL)
 
-        bmp_bytes, context = render_weather_chart_bmp(lat, lon, api_key)
+        bmp_bytes, context = render_weather_chart_bmp(lat, lon, api_key, note_text=note_text)
         if not bmp_bytes and not context:
             return _add_poll_interval_header(JsonResponse({
                 'error': 'Failed to fetch hourly forecast'
