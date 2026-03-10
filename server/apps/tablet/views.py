@@ -134,82 +134,10 @@ def bus_view(request):
                 else:
                     lat = bus_data.bus_location['lat']
                     lon = bus_data.bus_location['lon']
-                    last_hash = request.GET.get('lastHash')
-
-                    logger.info(f"bus_view: Rendering image for lat={lat}, lon={lon}, lastHash={'provided' if last_hash else 'not provided'}")
-
-                    # Call the render function to get image bytes
-                    map_image_bytes = render_icon_at_coordinates(lat, lon, return_bytes=True)
-
-                    if not map_image_bytes:
-                        logger.warning(f"bus_view: Map could not be rendered for coordinates ({lat}, {lon})")
-                        response_data['error_message'] = 'Map could not be rendered as an image'
-                    else:
-                        # Generate hash for current image
-                        current_hash = _generate_image_hash(map_image_bytes)
-                        logger.info(f"bus_view: Generated current hash: {current_hash[:16]}... (image size: {len(map_image_bytes)} bytes)")
-
-                        # Store current image in cache
-                        _bus_image_cache[current_hash] = map_image_bytes
-                        logger.info(f"bus_view: Cache size: {len(_bus_image_cache)}/{_MAX_CACHE_SIZE}, cached hashes: {[h[:8] + '...' for h in list(_bus_image_cache.keys())[:5]]}")
-
-                        # Limit cache size
-                        if len(_bus_image_cache) > _MAX_CACHE_SIZE:
-                            # Remove oldest entry (simple FIFO - remove first key)
-                            oldest_key = next(iter(_bus_image_cache))
-                            del _bus_image_cache[oldest_key]
-                            logger.info(f"bus_view: Removed oldest cache entry: {oldest_key[:16]}...")
-
-                        # If lastHash is provided, try to find and compare with previous image
-                        if last_hash:
-                            logger.info(f"bus_view: lastHash provided: {last_hash[:16]}...")
-                            if last_hash in _bus_image_cache:
-                                logger.info(f"bus_view: Found lastHash in cache, comparing images...")
-                                previous_bytes = _bus_image_cache[last_hash]
-
-                                # Compare images
-                                result_type, data = _compare_images_and_find_regions(map_image_bytes, previous_bytes)
-                                logger.info(f"bus_view: Comparison result: {result_type}")
-
-                                if result_type == 'identical':
-                                    # Images are identical - return skip
-                                    logger.info(f"bus_view: Images identical, returning skip (204)")
-                                    response = HttpResponse(status=204)
-                                    response['X-Update-Type'] = 'skip'
-                                    response['X-Image-Hash'] = current_hash
-                                    return _add_poll_interval_header(response, config.TABLET_BUS_POLL_INTERVAL)
-                                elif result_type == 'partial':
-                                    # Partial refresh - return changed regions
-                                    regions, changed_count, total_pixels = data
-                                    logger.info(f"bus_view: Partial refresh: {len(regions)} region(s), {changed_count}/{total_pixels} pixels changed")
-                                    response_data = {
-                                        'regions': regions
-                                    }
-                                    response = JsonResponse(response_data, content_type='application/json')
-                                    response['X-Update-Type'] = 'partial'
-                                    response['X-Image-Hash'] = current_hash
-                                    return _add_poll_interval_header(response, config.TABLET_BUS_POLL_INTERVAL)
-                                else:
-                                    # result_type == 'full' - too many changes, return full refresh
-                                    logger.info(f"bus_view: Comparison returned 'full', returning full refresh")
-                                    response = HttpResponse(map_image_bytes, content_type='image/bmp')
-                                    response['X-Update-Type'] = 'full'
-                                    response['X-Image-Hash'] = current_hash
-                                    response['Content-Disposition'] = f'inline; filename="bus_map_{lat}_{lon}.bmp"'
-                                    return _add_poll_interval_header(response, config.TABLET_BUS_POLL_INTERVAL)
-                            else:
-                                logger.warning(f"bus_view: lastHash {last_hash[:16]}... not found in cache. Cache keys: {[h[:8] + '...' for h in list(_bus_image_cache.keys())]}")
-
-                        # No lastHash provided or hash not found - return full refresh
-                        if not last_hash:
-                            logger.info(f"bus_view: No lastHash provided, returning full refresh")
-                        else:
-                            logger.info(f"bus_view: lastHash not found in cache, returning full refresh")
-                        response = HttpResponse(map_image_bytes, content_type='image/bmp')
-                        response['X-Update-Type'] = 'full'
-                        response['X-Image-Hash'] = current_hash
-                        response['Content-Disposition'] = f'inline; filename="bus_map_{lat}_{lon}.bmp"'
-                        return _add_poll_interval_header(response, config.TABLET_BUS_POLL_INTERVAL)
+                    response = _render_bus_map_response(request, lat, lon, poll_interval=config.TABLET_BUS_POLL_INTERVAL)
+                    if response is not None:
+                        return response
+                    response_data['error_message'] = 'Map could not be rendered as an image'
 
         # Add error message if request was not successful
         if not bus_data.request_successful and bus_data.error_message:
@@ -234,16 +162,17 @@ def bus_view(request):
 
 
 @require_http_methods(["GET"])
-def test_bus(request, num):
+def test_bus_view(request, num):
     """
-    Test endpoint for bus map images.
-    - num=1: Returns bus_map_1.bmp directly.
-    - num=2: Diffs bus_map_1 vs bus_map_2 and returns the same partial refresh JSON
-             used in bus_view (regions with base64-encoded changed areas), or full/skip
-             depending on the comparison result.
+    Test endpoint for bus map images. Uses the same render logic as bus_view
+    but with fake coordinates on 0.png:
+    - num=1: Renders map at fake coords 1 (34.045, -84.160).
+    - num=2: Renders map at fake coords 2 (34.055, -84.130).
+    Supports lastHash for partial refresh / skip, same as bus_view.
 
     Query parameters:
     - key: Required. Must match TABLET_KEY environment variable.
+    - lastHash: Optional. Hash of previous image for partial/skip response.
 
     Path parameters:
     - num: Required. Integer. 1 or 2.
@@ -258,56 +187,16 @@ def test_bus(request, num):
         return JsonResponse({'error': 'Not found'}, status=404)
 
     try:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        assets_dir = os.path.join(current_dir, "assets")
-
-        if num == 1:
-            # Return bus_map_1.bmp directly
-            filename = "bus_map_1.bmp"
-            image_path = os.path.join(assets_dir, filename)
-            if not os.path.exists(image_path):
-                logger.warning(f"test_bus: Image file not found: {image_path}")
-                return JsonResponse({'error': 'Not found'}, status=404)
-            with open(image_path, "rb") as f:
-                image_bytes = f.read()
-            response = HttpResponse(image_bytes, content_type="image/bmp")
-            response["Content-Disposition"] = f'inline; filename="{filename}"'
+        lat, lon = _TEST_BUS_COORDS[num]
+        response = _render_bus_map_response(request, lat, lon, poll_interval=config.TABLET_BUS_POLL_INTERVAL)
+        if response is not None:
             return response
 
-        # num == 2: diff bus_map_1 vs bus_map_2, return partial refresh format like bus_view
-        path_1 = os.path.join(assets_dir, "bus_map_1.bmp")
-        path_2 = os.path.join(assets_dir, "bus_map_2.bmp")
-        if not os.path.exists(path_1) or not os.path.exists(path_2):
-            logger.warning(f"test_bus: One or both image files not found: {path_1}, {path_2}")
-            return JsonResponse({'error': 'Not found'}, status=404)
-
-        with open(path_1, "rb") as f:
-            previous_bytes = f.read()
-        with open(path_2, "rb") as f:
-            current_bytes = f.read()
-
-        current_hash = _generate_image_hash(current_bytes)
-        result_type, data = _compare_images_and_find_regions(current_bytes, previous_bytes)
-
-        if result_type == 'identical':
-            response = HttpResponse(status=204)
-            response['X-Update-Type'] = 'skip'
-            response['X-Image-Hash'] = current_hash
-            return response
-        elif result_type == 'partial':
-            regions, changed_count, total_pixels = data
-            response_data = {'regions': regions}
-            response = JsonResponse(response_data, content_type='application/json')
-            response['X-Update-Type'] = 'partial'
-            response['X-Image-Hash'] = current_hash
-            return response
-        else:
-            # result_type == 'full' - too many changes, return full bus_map_2.bmp
-            response = HttpResponse(current_bytes, content_type='image/bmp')
-            response['X-Update-Type'] = 'full'
-            response['X-Image-Hash'] = current_hash
-            response['Content-Disposition'] = 'inline; filename="bus_map_2.bmp"'
-            return response
+        logger.warning(f"test_bus: Map could not be rendered for test coords num={num} ({lat}, {lon})")
+        return JsonResponse({
+            'error': 'Failed to render test bus map',
+            'details': 'Coordinates may be outside map bounds'
+        }, status=500)
 
     except Exception as e:
         logger.error(f"Error in test_bus view for num={num}: {e}", exc_info=True)
@@ -406,6 +295,101 @@ def session_status_view(request):
 def _generate_image_hash(image_bytes):
     """Generate SHA256 hash for image bytes."""
     return hashlib.sha256(image_bytes).hexdigest()
+
+
+# Fake coordinates for test_bus_view on 0.png (bounds from image_coords[0])
+# num=1: one position; num=2: another position (simulates bus movement)
+_TEST_BUS_COORDS = {
+    1: (34.045, -84.160),
+    2: (34.050, -84.170),
+}
+
+
+def _render_bus_map_response(request, lat, lon, poll_interval=None):
+    """
+    Shared logic for rendering a bus map at given coordinates and returning
+    the appropriate response (full BMP, partial regions JSON, or 204 skip).
+
+    Used by bus_view (real coords) and test_bus_view (fake coords).
+
+    Args:
+        request: Django request (for lastHash, debug params)
+        lat: Latitude
+        lon: Longitude
+        poll_interval: Optional. If set, adds X-Poll-Interval header to response.
+
+    Returns:
+        HttpResponse or JsonResponse. Returns None if map could not be rendered.
+    """
+    last_hash = request.GET.get('lastHash')
+
+    logger.info(f"bus_map: Rendering image for lat={lat}, lon={lon}, lastHash={'provided' if last_hash else 'not provided'}")
+
+    map_image_bytes = render_icon_at_coordinates(lat, lon, return_bytes=True)
+
+    if not map_image_bytes:
+        logger.warning(f"bus_map: Map could not be rendered for coordinates ({lat}, {lon})")
+        return None
+
+    current_hash = _generate_image_hash(map_image_bytes)
+    logger.info(f"bus_map: Generated current hash: {current_hash[:16]}... (image size: {len(map_image_bytes)} bytes)")
+
+    _bus_image_cache[current_hash] = map_image_bytes
+    logger.info(f"bus_map: Cache size: {len(_bus_image_cache)}/{_MAX_CACHE_SIZE}, cached hashes: {[h[:8] + '...' for h in list(_bus_image_cache.keys())[:5]]}")
+
+    if len(_bus_image_cache) > _MAX_CACHE_SIZE:
+        oldest_key = next(iter(_bus_image_cache))
+        del _bus_image_cache[oldest_key]
+        logger.info(f"bus_map: Removed oldest cache entry: {oldest_key[:16]}...")
+
+    def add_headers(response):
+        if poll_interval is not None:
+            return _add_poll_interval_header(response, poll_interval)
+        return response
+
+    if last_hash:
+        logger.info(f"bus_map: lastHash provided: {last_hash[:16]}...")
+        if last_hash in _bus_image_cache:
+            logger.info(f"bus_map: Found lastHash in cache, comparing images...")
+            previous_bytes = _bus_image_cache[last_hash]
+
+            result_type, data = _compare_images_and_find_regions(map_image_bytes, previous_bytes)
+            logger.info(f"bus_map: Comparison result: {result_type}")
+
+            if result_type == 'identical':
+                logger.info(f"bus_map: Images identical, returning skip (204)")
+                response = HttpResponse(status=204)
+                response['X-Update-Type'] = 'skip'
+                response['X-Image-Hash'] = current_hash
+                return add_headers(response)
+            elif result_type == 'partial':
+                regions, changed_count, total_pixels = data
+                logger.info(f"bus_map: Partial refresh: {len(regions)} region(s), {changed_count}/{total_pixels} pixels changed")
+                response_data = {'regions': regions}
+                response = JsonResponse(response_data, content_type='application/json')
+                response['X-Update-Type'] = 'partial'
+                response['X-Image-Hash'] = current_hash
+                return add_headers(response)
+            else:
+                logger.info(f"bus_map: Comparison returned 'full', returning full refresh")
+                response = HttpResponse(map_image_bytes, content_type='image/bmp')
+                response['X-Update-Type'] = 'full'
+                response['X-Image-Hash'] = current_hash
+                response['Content-Disposition'] = f'inline; filename="bus_map_{lat}_{lon}.bmp"'
+                return add_headers(response)
+        else:
+            logger.warning(f"bus_map: lastHash {last_hash[:16]}... not found in cache. Cache keys: {[h[:8] + '...' for h in list(_bus_image_cache.keys())]}")
+
+    if not last_hash:
+        logger.info(f"bus_map: No lastHash provided, returning full refresh")
+    else:
+        logger.info(f"bus_map: lastHash not found in cache, returning full refresh")
+
+    response = HttpResponse(map_image_bytes, content_type='image/bmp')
+    response['X-Update-Type'] = 'full'
+    response['X-Image-Hash'] = current_hash
+    response['Content-Disposition'] = f'inline; filename="bus_map_{lat}_{lon}.bmp"'
+    return add_headers(response)
 
 
 def _find_connected_components(changed_pixels_set, width, height):
