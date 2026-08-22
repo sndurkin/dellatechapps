@@ -23,8 +23,8 @@ from .models import BusSession, BusData
 logger = logging.getLogger(__name__)
 
 # Constants
-LOGIN_URL = "https://login2.herecomesthebus.com/authenticate.aspx?action=login"
-REFRESH_URL = "https://login2.herecomesthebus.com/Map.aspx/RefreshMap"
+LOGIN_URL = "https://login.herecomesthebus.com/authenticate.aspx?action=login"
+REFRESH_URL = "https://login.herecomesthebus.com/Map.aspx/RefreshMap"
 
 # Output directory for debug files (relative to Django's BASE_DIR)
 OUTPUT_DIR = os.path.join(settings.BASE_DIR, "bus_output")
