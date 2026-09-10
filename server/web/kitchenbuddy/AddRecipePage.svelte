@@ -45,6 +45,7 @@
     const data = await response.json();
     dispatch('recipe-fetched', {
       recipe: data.recipe.parsed_recipe,
+      recipeId: data.recipe.id,
     });
   }
 

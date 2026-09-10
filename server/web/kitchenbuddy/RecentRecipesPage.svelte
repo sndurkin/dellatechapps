@@ -11,7 +11,7 @@
   let recipes = [];
 
   function handleRecipeClick(recipe) {
-    dispatch('recipe-selected', { recipe: recipe.parsed_recipe });
+    dispatch('recipe-selected', { recipe: recipe.parsed_recipe, recipeId: recipe.id });
   }
 
   function handleAddRecipe() {

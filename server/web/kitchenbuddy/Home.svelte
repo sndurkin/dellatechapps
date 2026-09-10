@@ -66,7 +66,7 @@
   }
 
   function handleOpenRecipe(event) {
-    navigateTo('recipe', { recipe: event.detail.recipe });
+    navigateTo('recipe', event.detail);
   }
 
   function handleNewRecipe() {

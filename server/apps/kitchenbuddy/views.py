@@ -51,11 +51,67 @@ with open(str(settings.APPS_DIR / 'kitchenbuddy/ai-templates/system_prompt.txt')
 with open(str(settings.APPS_DIR / 'kitchenbuddy/ai-templates/user_prompt.tpl'), 'r') as f:
     user_prompt_template = Template(f.read())
 
+with open(str(settings.APPS_DIR / 'kitchenbuddy/ai-templates/edit_system_prompt.txt'), 'r') as f:
+    edit_system_prompt = f.read()
+
+with open(str(settings.APPS_DIR / 'kitchenbuddy/ai-templates/edit_user_prompt.tpl'), 'r') as f:
+    edit_user_prompt_template = Template(f.read())
+
 with open(str(settings.APPS_DIR / 'kitchenbuddy/ai-templates/recipe_function_call_schema.json'), 'r') as f:
     recipe_function_call_schema = json.load(f)
 
 
-@api_view(['GET', 'POST', 'DELETE'])
+def request_recipe_from_openai(messages, timeout=30):
+    data = {
+        **json.loads(config.KITCHENBUDDY_OPENAI),
+        "messages": messages,
+        "tool_choice": {
+            "type": "function",
+            "function": {
+                "name": "provide_recipe"
+            }
+        },
+        "tools": [{
+            "type": "function",
+            "function": recipe_function_call_schema,
+        }],
+    }
+
+    headers = {
+        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        completion_response = client.post(OPENAI_URL, json=data, headers=headers, timeout=timeout)
+        completion_response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        return None, Response({
+            "error": f"Failed to parse recipe with OpenAI: {e.response.status_code} {e.response.text}",
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except httpx.RequestError as e:
+        return None, Response({
+            "error": f"Failed to parse recipe with OpenAI: {str(e)}",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    completion = completion_response.json()
+
+    try:
+        tool_calls = completion['choices'][0]['message']['tool_calls']
+        for tool_call in tool_calls:
+            if tool_call['function']['name'] == "provide_recipe":
+                return json.loads(tool_call['function']['arguments']), None
+    except Exception as e:
+        return None, Response({
+            "error": str(e),
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    return None, Response({
+        "error": "Failed to parse recipe",
+    }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'POST', 'DELETE', 'PATCH'])
 def recipe_view(request):
     if request.method == 'POST':
         return create_recipe(request)
@@ -63,6 +119,8 @@ def recipe_view(request):
         return get_recipes(request)
     elif request.method == 'DELETE':
         return delete_recipe(request)
+    elif request.method == 'PATCH':
+        return edit_recipe(request)
 
 def create_recipe(request):
     username = request.data.pop('username', None)
@@ -98,67 +156,27 @@ def create_recipe(request):
         'html': recipe_content,
     }))
 
-    data = {
-        **json.loads(config.KITCHENBUDDY_OPENAI),
-        "messages": [{
-            "role": "system",
-            "content": system_prompt,
-        }, {
-            "role": "user",
-            "content": user_prompt,
-        }],
-        "tool_choice": {
-            "type": "function",
-            "function": {
-                "name": "provide_recipe"
-            }
-        },
-        "tools": [{
-            "type": "function",
-            "function": recipe_function_call_schema,
-        }],
-    }
+    arguments, error_response = request_recipe_from_openai([{
+        "role": "system",
+        "content": system_prompt,
+    }, {
+        "role": "user",
+        "content": user_prompt,
+    }])
+    if error_response:
+        return error_response
 
-    headers = {
-        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
-        "Content-Type": "application/json",
-    }
-
-    try:
-        completion_response = client.post(OPENAI_URL, json=data, headers=headers, timeout=30)
-        completion_response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        return Response({
-            "error": f"Failed to parse recipe with OpenAI: {e.response.status_code} {e.response.text}",
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-    completion = completion_response.json()
-
-    try:
-        tool_calls = completion['choices'][0]['message']['tool_calls']
-        for tool_call in tool_calls:
-            if tool_call['function']['name'] == "provide_recipe":
-                arguments = json.loads(tool_call['function']['arguments'])
-
-                serializer.save(
-                    title=arguments['title'],
-                    url=url,
-                    content=recipe_content,
-                    user=user,
-                    parsed_recipe=arguments,
-                )
-
-                return Response({
-                    "recipe": serializer.data,
-                }, status=status.HTTP_201_CREATED)
-    except Exception as e:
-        return Response({
-            "error": str(e),
-        }, status=status.HTTP_400_BAD_REQUEST)
+    serializer.save(
+        title=arguments['title'],
+        url=url,
+        content=recipe_content,
+        user=user,
+        parsed_recipe=arguments,
+    )
 
     return Response({
-        "error": "Failed to parse recipe",
-    }, status=status.HTTP_400_BAD_REQUEST)
+        "recipe": serializer.data,
+    }, status=status.HTTP_201_CREATED)
 
 def get_recipes(request):
     username = request.GET.get('username') or request.data.get('username')
@@ -189,6 +207,60 @@ def delete_recipe(request):
 
     recipe.delete()
     return get_recipes(request)
+
+def edit_recipe(request):
+    username = request.data.get('username')
+    if not username:
+        return Response({
+            "error": "username is a required field",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    recipe_id = request.data.get('id')
+    if recipe_id is None:
+        return Response({
+            "error": "id is a required field",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    instructions = (request.data.get('instructions') or '').strip()
+    if not instructions:
+        return Response({
+            "error": "instructions is a required field",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    recipe = Recipe.objects.filter(id=recipe_id, user__username=username).first()
+    if not recipe:
+        return Response({
+            "error": "Recipe not found",
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    recipe_json = request.data.get('recipe') or recipe.parsed_recipe
+    user_prompt = edit_user_prompt_template.render(Context({
+        'recipe_json': json.dumps(recipe_json, indent=2),
+        'instructions': instructions,
+    }))
+
+    arguments, error_response = request_recipe_from_openai([{
+        "role": "system",
+        "content": edit_system_prompt,
+    }, {
+        "role": "user",
+        "content": user_prompt,
+    }], timeout=60)
+    if error_response:
+        return error_response
+
+    try:
+        recipe.title = arguments['title']
+        recipe.parsed_recipe = arguments
+        recipe.save()
+    except Exception as e:
+        return Response({
+            "error": str(e),
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({
+        "recipe": RecipeSerializer(recipe).data,
+    }, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 def get_grocery_list(request):
