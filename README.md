@@ -237,6 +237,29 @@ scp -r server/apps/tablet/assets/* user@your-droplet:/var/www/dellatechapps/asse
 
 **Note:** Assets only need to be uploaded once (or when they change). The docker-compose volume mount ensures they persist across container rebuilds.
 
+## Production Server Shell Shortcuts
+
+`scripts/.bashrc` defines `dt` shortcuts for managing Docker containers on the production server.
+
+Upload the file to the production server:
+
+```bash
+scp -i ~/.ssh/<identity file> scripts/.bashrc root@<server ip>:~/.bashrc
+```
+
+Then log in to the server:
+
+```bash
+ssh -i ~/.ssh/<identity file> root@<server ip>
+```
+
+Remove `\r` characters from the file (if it was copied from Windows) and source it:
+
+```bash
+sed -i 's/\r//g' ~/.bashrc
+source ~/.bashrc
+```
+
 ## BusData Cleanup - Daily Scheduled Task
 
 The application includes a management command to automatically clean up old BusData records.
