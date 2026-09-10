@@ -26,6 +26,25 @@ def extract_item_name(item_text):
     """
     return item_text.split(',')[0].strip().lower()
 
+
+def parse_item_amount(amount):
+    """Return a positive numeric increment for grocery list item_counts."""
+    if amount is None or amount == '':
+        return 1
+    if isinstance(amount, bool):
+        return 1
+    if isinstance(amount, (int, float)):
+        return amount if amount > 0 else 1
+    try:
+        value = float(amount)
+    except (TypeError, ValueError):
+        return 1
+    if value <= 0:
+        return 1
+    if value.is_integer():
+        return int(value)
+    return value
+
 with open(str(settings.APPS_DIR / 'kitchenbuddy/ai-templates/system_prompt.txt'), 'r') as f:
     system_prompt = f.read()
 
@@ -220,69 +239,33 @@ def sort_grocery_items(items, all_items_sorted):
 
 @api_view(['POST'])
 def add_to_grocery_list(request):
-    username = request.data.pop('username', None)
+    username = request.data.get('username')
     if not username:
         return Response({
             "error": "username is a required field",
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    # Keep original items with additional info, but convert to lowercase for consistency
-    request.data['items'] = [item.lower() for item in request.data.get('items', [])]
+    new_items = parse_items_to_add(request.data)
+    if not new_items:
+        return Response({
+            "error": "item or items is required",
+        }, status=status.HTTP_400_BAD_REQUEST)
 
-    # Initialize item_counts if not provided
-    if 'item_counts' not in request.data:
-        request.data['item_counts'] = {}
-
-    serializer = GroceryListSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    increment = parse_item_amount(request.data.get('amount'))
     user, _ = User.objects.get_or_create(username=username)
-
-    # Get or create grocery list
     grocery_list = GroceryList.objects.filter(user=user).first()
+
     if grocery_list:
-        # Add to existing list
-        new_items = serializer.validated_data['items']
-
-        # Count occurrences of each item (using full item text)
-        updated_item_counts = grocery_list.item_counts.copy()
-        for item in new_items:
-            updated_item_counts[item] = updated_item_counts.get(item, 0) + 1
-
-        # Combine existing items with new items, removing duplicates (preserve full item text)
-        combined_items = list(dict.fromkeys(grocery_list.items + new_items))
-
-        # Add new items to all_items_sorted using clean names only
-        all_items_sorted = grocery_list.all_items_sorted
-        for item in new_items:
-            clean_item = extract_item_name(item)
-            if clean_item not in all_items_sorted:
-                all_items_sorted.insert(get_best_position(clean_item, all_items_sorted), clean_item)
-
-        # Sort the combined items based on all_items_sorted
-        sorted_items = sort_grocery_items(combined_items, all_items_sorted)
-
-        # Update both items and all_items_sorted
-        grocery_list.items = sorted_items
-        grocery_list.all_items_sorted = all_items_sorted
-        grocery_list.item_counts = updated_item_counts
-
-        grocery_list.save()
+        merge_items_into_grocery_list(grocery_list, new_items, increment)
     else:
-        # Create new list - items contain full text, all_items_sorted contains clean names
-        # Remove duplicates from initial items (preserve full item text)
-        unique_items = list(dict.fromkeys(serializer.validated_data['items']))
-        # Create all_items_sorted with clean names only
-        unique_clean_items = list(dict.fromkeys([extract_item_name(item) for item in unique_items]))
-        # Initialize counts for new items
-        item_counts = serializer.validated_data.get('item_counts', {})
-
-        grocery_list = serializer.save(
+        item_counts = {}
+        if increment != 1:
+            item_counts = {item: increment for item in new_items}
+        grocery_list = GroceryList.objects.create(
             user=user,
-            all_items_sorted=unique_clean_items,
-            items=unique_items,
-            item_counts=item_counts
+            items=new_items,
+            all_items_sorted=list(dict.fromkeys(extract_item_name(item) for item in new_items)),
+            item_counts=item_counts,
         )
 
     return Response({
@@ -290,6 +273,43 @@ def add_to_grocery_list(request):
         "all_items_sorted": grocery_list.all_items_sorted,
         "item_counts": grocery_list.item_counts,
     }, status=status.HTTP_201_CREATED)
+
+
+def parse_items_to_add(data):
+    """Collect items to add. Does not replace the existing grocery list."""
+    new_items = []
+    item = data.get('item')
+    if item is not None and str(item).strip():
+        new_items.append(str(item).strip().lower())
+
+    items = data.get('items')
+    if items:
+        if not isinstance(items, list):
+            items = [items]
+        new_items.extend(str(entry).strip().lower() for entry in items if str(entry).strip())
+
+    return list(dict.fromkeys(new_items))
+
+
+def merge_items_into_grocery_list(grocery_list, new_items, increment):
+    updated_item_counts = dict(grocery_list.item_counts or {})
+    existing_items = grocery_list.items or []
+
+    for item in new_items:
+        current = updated_item_counts.get(item, 1 if item in existing_items else 0)
+        updated_item_counts[item] = current + increment
+
+    combined_items = list(dict.fromkeys(existing_items + new_items))
+    all_items_sorted = list(grocery_list.all_items_sorted or [])
+    for item in new_items:
+        clean_item = extract_item_name(item)
+        if clean_item not in all_items_sorted:
+            all_items_sorted.insert(get_best_position(clean_item, all_items_sorted), clean_item)
+
+    grocery_list.items = sort_grocery_items(combined_items, all_items_sorted)
+    grocery_list.all_items_sorted = all_items_sorted
+    grocery_list.item_counts = updated_item_counts
+    grocery_list.save()
 
 def get_best_position(item, all_items_sorted):
     best_ratio = 0

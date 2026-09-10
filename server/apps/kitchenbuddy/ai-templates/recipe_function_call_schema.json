@@ -13,23 +13,33 @@
       },
       "ingredients": {
         "type": "array",
+        "description": "List of ingredients. Each entry is an object with separate name, amount, and modifier properties.",
         "items": {
           "type": "object",
-          "description": "A collection of ingredients in this recipe that are all located in the same place in the kitchen.",
           "properties": {
-            "location": {
+            "name": {
               "type": "string",
-              "enum": ["Pantry", "Cabinet", "Refrigerator", "Freezer", "Counter"],
-              "description": "The location in which this collection of ingredients is located."
+              "description": "The grocery/shopping name only, without quantity or preparation adjectives. Prefer the common grocery name, typically singular (e.g. 'chicken breast', 'yellow onion', 'all-purpose flour', 'garlic clove')."
             },
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "description": "The name and amount of the ingredient."
-              }
+            "amount": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "description": "A numeric quantity when the amount is a plain number (e.g. 2 for 2 yellow onions, 3 for 3 garlic cloves)."
+                },
+                {
+                  "type": "string",
+                  "description": "A string quantity when units or non-numeric wording are needed (e.g. '1 lb', '2 cups', '1 stick', '1/2 tsp', 'to taste')."
+                }
+              ],
+              "description": "The quantity. Prefer a number when possible (e.g. 2). Use a string when units or non-numeric wording are needed (e.g. '1 lb', '1 stick', '2 cups', 'to taste')."
+            },
+            "modifier": {
+              "type": "string",
+              "description": "Preparation adjectives or descriptors that are not part of the grocery name (e.g. 'thinly sliced', 'minced', 'chopped', 'softened'). Empty string if there is no modifier."
             }
-          }
+          },
+          "required": ["name", "amount"]
         }
       },
       "cookware": {

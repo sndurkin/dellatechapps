@@ -164,6 +164,6 @@ CONSTANCE_CONFIG = {
     "TABLET_BUS_POLL_INTERVAL": (15, "Seconds to wait before next request to bus view"),
     "TABLET_WEATHER_POLL_INTERVAL": (60, "Seconds to wait before next request to weather view"),
     "WEATHER_NOTES": ('[]', 'JSON array of notes, e.g. [{"note":"Take umbrella","cron":"0 7 * * *","duration":"12 hours"}]'),
-    "KITCHENBUDDY_OPENAI": ('{"model": "gpt-5.6-terra", "reasoning_effort": "low"}', "JSON object of OpenAI chat completion params for recipe parsing"),
-    "STORYMAGIC_OPENAI": ('{"model": "gpt-5.6-terra", "reasoning_effort": "low"}', "JSON object of OpenAI chat completion params for story creation"),
+    "KITCHENBUDDY_OPENAI": ('{"model": "gpt-5.6-terra", "reasoning_effort": "none"}', "JSON object of OpenAI chat completion params for recipe parsing"),
+    "STORYMAGIC_OPENAI": ('{"model": "gpt-5.6-terra", "reasoning_effort": "none"}', "JSON object of OpenAI chat completion params for story creation"),
 }
