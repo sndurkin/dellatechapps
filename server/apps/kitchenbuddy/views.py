@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework import status
 
+from constance import config
+
 from .serializers import RecipeSerializer, GroceryListSerializer
 from .models import User, Recipe, GroceryList
 
@@ -34,12 +36,14 @@ with open(str(settings.APPS_DIR / 'kitchenbuddy/ai-templates/recipe_function_cal
     recipe_function_call_schema = json.load(f)
 
 
-@api_view(['GET', 'POST'])
+@api_view(['GET', 'POST', 'DELETE'])
 def recipe_view(request):
     if request.method == 'POST':
         return create_recipe(request)
     elif request.method == 'GET':
         return get_recipes(request)
+    elif request.method == 'DELETE':
+        return delete_recipe(request)
 
 def create_recipe(request):
     username = request.data.pop('username', None)
@@ -76,8 +80,7 @@ def create_recipe(request):
     }))
 
     data = {
-        "model": "gpt-4.1",
-        "temperature": 1,
+        **json.loads(config.KITCHENBUDDY_OPENAI),
         "messages": [{
             "role": "system",
             "content": system_prompt,
@@ -139,11 +142,34 @@ def create_recipe(request):
     }, status=status.HTTP_400_BAD_REQUEST)
 
 def get_recipes(request):
-    recipes = Recipe.objects.filter(user__username=request.GET.get('username')).order_by('-created_at')
+    username = request.GET.get('username') or request.data.get('username')
+    recipes = Recipe.objects.filter(user__username=username).order_by('-created_at')
     serializer = RecipeSerializer(recipes, many=True)
     return Response({
         "recipes": serializer.data,
     }, status=status.HTTP_200_OK)
+
+def delete_recipe(request):
+    username = request.data.get('username')
+    if not username:
+        return Response({
+            "error": "username is a required field",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    recipe_id = request.data.get('id')
+    if recipe_id is None:
+        return Response({
+            "error": "id is a required field",
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    recipe = Recipe.objects.filter(id=recipe_id, user__username=username).first()
+    if not recipe:
+        return Response({
+            "error": "Recipe not found",
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    recipe.delete()
+    return get_recipes(request)
 
 @api_view(['GET'])
 def get_grocery_list(request):

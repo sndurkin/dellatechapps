@@ -6,6 +6,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework import status
 
+from constance import config
+
 from .serializers import StorySerializer
 
 client = OpenAI(
@@ -24,7 +26,7 @@ def create_story(request):
     sentence_count = serializer.validated_data['sentence_count']
 
     completion = client.chat.completions.create(
-        model="gpt-4.1-mini",
+        **json.loads(config.STORYMAGIC_OPENAI),
         messages=[{
             "role": "system",
             "content": "You are an expert author that can write short stories for children to use to learn to read. Your task is to write the perfect, age-appropriate short story given the topic, sentence count and any other details. Return the title and sentences of the story. Ensure that the sentences are organized into an array of strings."
